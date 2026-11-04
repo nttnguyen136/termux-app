@@ -802,6 +802,19 @@ public final class ExtraKeysView extends GridLayout implements TermuxAppearanceA
         return true;
     }
 
+    /**
+     * Deactivate and unlock all {@link SpecialButton} registered in {@link #mSpecialButtons}, like
+     * when the user switches away from this view to another extra keys layout.
+     */
+    public void resetSpecialButtons() {
+        stopScheduledExecutors();
+        if (mSpecialButtons == null) return;
+        for (SpecialButtonState state : mSpecialButtons.values()) {
+            state.setIsLocked(false);
+            state.setIsActive(false);
+        }
+    }
+
     public MaterialButton createSpecialButton(String buttonKey, boolean needUpdate) {
         SpecialButtonState state = mSpecialButtons.get(SpecialButton.valueOf(buttonKey));
         if (state == null) return null;

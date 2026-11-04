@@ -75,6 +75,8 @@ android {
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
+    // Real org.json implementation for JVM unit tests, since the android.jar one is only stubs
+    testImplementation "org.json:json:20231013"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }

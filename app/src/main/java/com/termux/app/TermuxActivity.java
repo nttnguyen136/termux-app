@@ -44,6 +44,7 @@ import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.termux.app.terminal.TermuxSessionsListViewController;
+import com.termux.app.terminal.io.FullScreenWorkAround;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.TermuxTerminalViewClient;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
@@ -141,9 +142,16 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     View mTermuxActivityBottomSpaceView;
 
     /**
-     * The terminal extra keys view.
+     * The terminal extra keys view of the currently selected terminal toolbar page, or {@code null}
+     * if the text input page is selected.
      */
     ExtraKeysView mExtraKeysView;
+
+    /** If {@link FullScreenWorkAround} has already been applied for this activity. */
+    private boolean mIsFullScreenWorkAroundApplied;
+
+    /** If the properties and styling should be reloaded in the next {@link #onStart()}. */
+    private static volatile boolean sReloadStylingOnStart;
 
     /**
      * The client for the {@link #mExtraKeysView}.
@@ -326,6 +334,22 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             addTermuxActivityRootViewGlobalLayoutListener();
 
         registerTermuxActivityBroadcastReceiver();
+
+        // The ACTION_RELOAD_STYLE broadcast is not received while the activity is stopped, like
+        // when the extra keys were edited in ExtraKeysEditorActivity
+        if (sReloadStylingOnStart) {
+            sReloadStylingOnStart = false;
+            reloadActivityStyling(false);
+        }
+    }
+
+    /**
+     * Request that the {@link TermuxActivity} reloads the properties and styling the next time it
+     * is started, since the {@link TERMUX_ACTIVITY#ACTION_RELOAD_STYLE} broadcast is only received
+     * while it is visible.
+     */
+    public static void requestReloadStylingOnStart() {
+        sReloadStylingOnStart = true;
     }
 
     @Override
@@ -556,17 +580,31 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (savedInstanceState != null)
             savedTextInput = savedInstanceState.getString(ARG_TERMINAL_TOOLBAR_TEXT_INPUT);
 
-        terminalToolbarViewPager.setAdapter(new TerminalToolbarViewPager.PageAdapter(this, savedTextInput));
+        // The ViewPager restores the current page itself on activity recreation
+        setTerminalToolbarAdapter(savedTextInput);
         terminalToolbarViewPager.addOnPageChangeListener(new TerminalToolbarViewPager.OnPageChangeListener(this, terminalToolbarViewPager));
+    }
+
+    /** Set a new {@link TerminalToolbarViewPager.PageAdapter} for the current extra keys layouts. This resets the current page to the first one. */
+    private void setTerminalToolbarAdapter(String savedTextInput) {
+        final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
+        if (terminalToolbarViewPager == null) return;
+
+        if (mExtraKeysView != null) mExtraKeysView.resetSpecialButtons();
+        mExtraKeysView = null;
+        // Keep all pages alive so that they are not recreated while swiping between the layouts
+        terminalToolbarViewPager.setOffscreenPageLimit(Math.max(1, mTermuxTerminalExtraKeys.getExtraKeysLayoutCount()));
+        terminalToolbarViewPager.setAdapter(new TerminalToolbarViewPager.PageAdapter(this, savedTextInput));
     }
 
     private void setTerminalToolbarHeight() {
         final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
         if (terminalToolbarViewPager == null) return;
 
+        // The toolbar has a fixed height for the layout with the most rows. Layouts with fewer rows are stretched.
         ViewGroup.LayoutParams layoutParams = terminalToolbarViewPager.getLayoutParams();
         layoutParams.height = Math.round(mTerminalToolbarDefaultHeight *
-            (mTermuxTerminalExtraKeys.getExtraKeysInfo() == null ? 0 : mTermuxTerminalExtraKeys.getExtraKeysInfo().getMatrix().length) *
+            mTermuxTerminalExtraKeys.getMaxExtraKeysRowCount() *
             mProperties.getTerminalToolbarHeightScaleFactor());
         terminalToolbarViewPager.setLayoutParams(layoutParams);
     }
@@ -591,6 +629,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (textInputView != null) {
             String textInput = textInputView.getText().toString();
             if (!textInput.isEmpty()) savedInstanceState.putString(ARG_TERMINAL_TOOLBAR_TEXT_INPUT, textInput);
+        } else {
+            // The text input page may not be instantiated yet, like right after the adapter was reset
+            final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
+            if (terminalToolbarViewPager != null && terminalToolbarViewPager.getAdapter() instanceof TerminalToolbarViewPager.PageAdapter) {
+                String textInput = ((TerminalToolbarViewPager.PageAdapter) terminalToolbarViewPager.getAdapter()).getPendingSavedTextInput();
+                if (textInput != null && !textInput.isEmpty()) savedInstanceState.putString(ARG_TERMINAL_TOOLBAR_TEXT_INPUT, textInput);
+            }
         }
     }
 
@@ -935,11 +980,18 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     public boolean isTerminalViewSelected() {
-        return getTerminalToolbarViewPager().getCurrentItem() == 0;
+        return getTerminalToolbarViewPager().getCurrentItem() < mTermuxTerminalExtraKeys.getExtraKeysLayoutCount();
     }
 
     public boolean isTerminalToolbarTextInputViewSelected() {
-        return getTerminalToolbarViewPager().getCurrentItem() == 1;
+        return getTerminalToolbarViewPager().getCurrentItem() == mTermuxTerminalExtraKeys.getExtraKeysLayoutCount();
+    }
+
+    /** Apply the {@link FullScreenWorkAround} if not already applied for this activity. */
+    public void applyFullScreenWorkAroundOnce() {
+        if (mIsFullScreenWorkAroundApplied) return;
+        mIsFullScreenWorkAroundApplied = true;
+        FullScreenWorkAround.apply(this);
     }
 
 
@@ -1062,9 +1114,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mProperties != null) {
             reloadProperties();
 
-            if (mExtraKeysView != null) {
-                mExtraKeysView.setButtonTextAllCaps(mProperties.shouldExtraKeysTextBeAllCaps());
-                mExtraKeysView.reload(mTermuxTerminalExtraKeys.getExtraKeysInfo(), mTerminalToolbarDefaultHeight);
+            // Reload the extra keys layouts, since the number of layouts may have changed and the
+            // current page resets to the first layout
+            if (mTermuxTerminalExtraKeys != null) {
+                mTermuxTerminalExtraKeys.reloadExtraKeys();
+                final EditText textInputView = findViewById(R.id.terminal_toolbar_text_input);
+                String textInput = textInputView != null ? textInputView.getText().toString() : null;
+                setTerminalToolbarAdapter(textInput != null && !textInput.isEmpty() ? textInput : null);
             }
         }
 
