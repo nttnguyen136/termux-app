@@ -2,15 +2,6 @@ name: Build and Package APK
 
 on:
   workflow_dispatch:
-    inputs:
-      package_variant:
-        description: "Package variant to build"
-        required: true
-        default: "apt-android-7"
-        type: choice
-        options:
-          - apt-android-7
-          - apt-android-5
   push:
     branches:
       - master
@@ -27,43 +18,24 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package_variant:
-          - apt-android-7
-          - apt-android-5
 
     steps:
-      - name: Check variant filter for workflow_dispatch
-        id: filter
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.package_variant }}" != "${{ matrix.package_variant }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Checkout repository
-        if: steps.filter.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Java 17
-        if: steps.filter.outputs.skip != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
 
       - name: Make gradlew executable
-        if: steps.filter.outputs.skip != 'true'
         run: chmod +x ./gradlew
 
-      - name: Build APKs
-        if: steps.filter.outputs.skip != 'true'
+      - name: Build arm64-v8a APK
         env:
-          PACKAGE_VARIANT: ${{ matrix.package_variant }}
+          PACKAGE_VARIANT: apt-android-7
         run: |
           set -euo pipefail
 
@@ -91,9 +63,11 @@ jobs:
           fi
 
           APK_BASENAME_PREFIX="termux-app_${APK_VERSION_TAG}"
+          APK_FILENAME="${APK_BASENAME_PREFIX}_arm64-v8a.apk"
 
           echo "APK_DIR_PATH=$APK_DIR_PATH" >> "$GITHUB_ENV"
           echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> "$GITHUB_ENV"
+          echo "APK_FILENAME=$APK_FILENAME" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION_NAME=$RELEASE_VERSION_NAME" >> "$GITHUB_ENV"
 
           export TERMUX_APP_VERSION_NAME="$APP_VERSION_NAME"
@@ -102,45 +76,31 @@ jobs:
 
           ./gradlew assembleDebug
 
-          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
-            if [ ! -f "${APK_DIR_PATH}/${APK_BASENAME_PREFIX}_${abi}.apk" ]; then
-              echo "Missing APK: ${APK_DIR_PATH}/${APK_BASENAME_PREFIX}_${abi}.apk"
-              ls -la "$APK_DIR_PATH"
-              exit 1
-            fi
-          done
+          if [ ! -f "${APK_DIR_PATH}/${APK_FILENAME}" ]; then
+            echo "Missing APK: ${APK_DIR_PATH}/${APK_FILENAME}"
+            ls -la "$APK_DIR_PATH"
+            exit 1
+          fi
 
           (
             cd "$APK_DIR_PATH"
-            sha256sum \
-              "${APK_BASENAME_PREFIX}_universal.apk" \
-              "${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
-              "${APK_BASENAME_PREFIX}_armeabi-v7a.apk" \
-              "${APK_BASENAME_PREFIX}_x86_64.apk" \
-              "${APK_BASENAME_PREFIX}_x86.apk" \
-              > "${APK_BASENAME_PREFIX}_sha256sums"
+            sha256sum "${APK_FILENAME}" > "${APK_BASENAME_PREFIX}_sha256sums"
           )
 
-      - name: Upload APK Artifacts
-        if: steps.filter.outputs.skip != 'true'
-        uses: actions/upload-artifact@v4
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v6
         with:
-          name: termux-app-${{ matrix.package_variant }}-apks
+          name: termux-app-apt-android-7-arm64-v8a
           path: |
-            ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_*.apk
+            ${{ env.APK_DIR_PATH }}/${{ env.APK_FILENAME }}
             ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_sha256sums
             ${{ env.APK_DIR_PATH }}/output-metadata.json
 
-      - name: Attach APKs to GitHub Release
-        if: steps.filter.outputs.skip != 'true' && github.event_name == 'release'
+      - name: Attach APK to GitHub Release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ env.RELEASE_VERSION_NAME }}" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_universal.apk" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_arm64-v8a.apk" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_armeabi-v7a.apk" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_x86_64.apk" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_x86.apk" \
-            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_sha256sums" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_FILENAME }}" \
             --clobber
