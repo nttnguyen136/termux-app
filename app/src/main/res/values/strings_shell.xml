@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bootstrap_stage_preparing_title">Preparing environment</string>
+    <string name="bootstrap_stage_preparing_detail">Preparing Termux directories…</string>
+    <string name="bootstrap_stage_extracting_title">Installing bootstrap</string>
+    <string name="bootstrap_stage_extracting_detail">Extracting base bootstrap packages…</string>
+    <string name="bootstrap_stage_symlinks_title">Configuring system</string>
+    <string name="bootstrap_stage_symlinks_detail">Setting up links and environment…</string>
+    <string name="shell_setup_stage_installing_zsh_title">Installing Zsh</string>
+    <string name="shell_setup_stage_installing_zsh_detail">Installing offline Zsh packages…</string>
+    <string name="shell_setup_stage_extracting_omz_title">Setting up Oh My Zsh</string>
+    <string name="shell_setup_stage_extracting_omz_detail">Unpacking Oh My Zsh, plugins, and theme…</string>
+    <string name="shell_setup_stage_configuring_title">Configuring shell</string>
+    <string name="shell_setup_stage_configuring_detail">Applying default shell, prompt, and welcome banner…</string>
+    <string name="shell_setup_stage_complete_title">Setup complete</string>
+    <string name="shell_setup_stage_complete_detail">Starting terminal session…</string>
+
+    <string name="shell_status_zsh_active">Zsh (default)</string>
+    <string name="shell_status_bash_fallback">Bash (fallback)</string>
+    <string name="shell_status_omz_ready">Oh My Zsh &amp; plugins installed</string>
+    <string name="shell_status_omz_not_configured">Oh My Zsh not installed</string>
+</resources>

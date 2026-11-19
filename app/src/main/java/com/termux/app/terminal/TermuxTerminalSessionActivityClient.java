@@ -2,7 +2,7 @@ package com.termux.app.terminal;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -24,18 +24,26 @@ import com.termux.app.TermuxActivity;
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.app.TermuxService;
+import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.terminal.io.BellHandler;
+import com.termux.shared.termux.theme.TermuxAppearancePreferences;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxFontManager;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalColors;
+import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.terminal.TextStyle;
+import com.termux.view.TerminalView;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.util.Properties;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
 public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionClientBase {
@@ -58,8 +66,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
      * Should be called when mActivity.onCreate() is called
      */
     public void onCreate() {
-        // Set terminal fonts and colors
-        checkForFontAndColors();
+        // Appearance (theme, Nerd Font, cursor style, system bars) is applied once in
+        // TermuxActivity.onCreate() via applyCurrentAppearance() after views are initialized.
     }
 
     /**
@@ -217,6 +225,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
+        if (!mActivity.isVisible()) return;
         if (mActivity.getCurrentSession() == changedSession)
             updateBackgroundColor();
     }
@@ -258,7 +267,33 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public Integer getTerminalCursorStyle() {
-        return mActivity.getProperties().getTerminalCursorStyle();
+        return resolveTerminalCursorStyle(mActivity, mActivity.getProperties());
+    }
+
+    /**
+     * Resolve effective cursor style: explicit in-app appearance preference takes precedence
+     * over {@code ~/.termux/termux.properties}, falling back to {@link TerminalEmulator#DEFAULT_TERMINAL_CURSOR_STYLE}.
+     */
+    public static int resolveTerminalCursorStyle(
+        @NonNull Context context,
+        @Nullable TermuxAppSharedProperties properties
+    ) {
+        int preferred = TermuxAppearancePreferences.getCursorStyle(context);
+        int fallback = properties != null
+            ? properties.getTerminalCursorStyle()
+            : TerminalEmulator.DEFAULT_TERMINAL_CURSOR_STYLE;
+        return resolveTerminalCursorStyleValue(preferred, fallback);
+    }
+
+    public static int resolveTerminalCursorStyleValue(int preferredCursorStyle, int propertiesCursorStyle) {
+        if (preferredCursorStyle != TermuxAppearancePreferences.CURSOR_STYLE_UNSET
+            && Arrays.asList(TerminalEmulator.TERMINAL_CURSOR_STYLES_LIST).contains(preferredCursorStyle)) {
+            return preferredCursorStyle;
+        }
+        if (Arrays.asList(TerminalEmulator.TERMINAL_CURSOR_STYLES_LIST).contains(propertiesCursorStyle)) {
+            return propertiesCursorStyle;
+        }
+        return TerminalEmulator.DEFAULT_TERMINAL_CURSOR_STYLE;
     }
 
 
@@ -302,6 +337,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // be stale, like current session not selected or scrolled to.
         checkAndScrollToSession(session);
         updateBackgroundColor();
+        termuxSessionListNotifyUpdated();
     }
 
     void notifyOfSessionChange() {
@@ -366,7 +402,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (service == null) return;
 
         if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
-            new AlertDialog.Builder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
+            new MaterialAlertDialogBuilder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
                 .setPositiveButton(android.R.string.ok, null).show();
         } else {
             TerminalSession currentSession = mActivity.getCurrentSession();
@@ -493,36 +529,80 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     public void checkForFontAndColors() {
         try {
-            File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
-            File fontFile = TermuxConstants.TERMUX_FONT_FILE;
-
-            final Properties props = new Properties();
-            if (colorsFile.isFile()) {
-                try (InputStream in = new FileInputStream(colorsFile)) {
-                    props.load(in);
-                }
-            }
-
-            TerminalColors.COLOR_SCHEME.updateWith(props);
-            TerminalSession session = mActivity.getCurrentSession();
-            if (session != null && session.getEmulator() != null) {
-                session.getEmulator().mColors.reset();
-            }
-            updateBackgroundColor();
-
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
-            mActivity.getTerminalView().setTypeface(newTypeface);
+            TermuxColorPalette palette = TermuxThemeManager.getActivePalette(mActivity);
+            Typeface typeface = TermuxFontManager.getActiveTypeface(mActivity);
+            applyAppearance(palette, typeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
         }
     }
 
-    public void updateBackgroundColor() {
-        if (!mActivity.isVisible()) return;
-        TerminalSession session = mActivity.getCurrentSession();
-        if (session != null && session.getEmulator() != null) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
+    public void applyAppearance(@NonNull TermuxColorPalette palette, @NonNull Typeface typeface) {
+        try {
+            TermuxThemeManager.applyToTerminalColorScheme(palette);
+            applyColorsAndCursorToAllSessions();
+            updateBackgroundColor();
+
+            TerminalView terminalView = mActivity.getTerminalView();
+            if (terminalView != null) {
+                if (terminalView.mRenderer == null) {
+                    int fontSize = mActivity.getPreferences() != null
+                        ? mActivity.getPreferences().getFontSize()
+                        : TermuxAppSharedPreferences.getDefaultFontSizes(mActivity)[0];
+                    terminalView.setTextSize(fontSize);
+                }
+                terminalView.setTypeface(typeface);
+                terminalView.invalidate();
+            }
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Error in applyAppearance()", e);
         }
+    }
+
+    public void applyColorsAndCursorToAllSessions() {
+        List<TerminalSession> sessionsToUpdate = new ArrayList<>();
+        TermuxService service = mActivity.getTermuxService();
+        if (service != null) {
+            List<TermuxSession> termuxSessions = new ArrayList<>(service.getTermuxSessions());
+            for (int i = 0; i < termuxSessions.size(); i++) {
+                TermuxSession termuxSession = termuxSessions.get(i);
+                if (termuxSession != null && termuxSession.getTerminalSession() != null) {
+                    sessionsToUpdate.add(termuxSession.getTerminalSession());
+                }
+            }
+        }
+        TerminalSession currentSession = mActivity.getCurrentSession();
+        if (currentSession != null && !sessionsToUpdate.contains(currentSession)) {
+            sessionsToUpdate.add(currentSession);
+        }
+        resetSessionsColorsAndCursor(sessionsToUpdate);
+
+        TerminalView terminalView = mActivity.getTerminalView();
+        if (terminalView != null) {
+            terminalView.invalidate();
+        }
+    }
+
+    public static void resetSessionsColorsAndCursor(@Nullable Collection<TerminalSession> sessions) {
+        if (sessions == null) return;
+        for (TerminalSession session : sessions) {
+            if (session != null && session.getEmulator() != null) {
+                session.getEmulator().mColors.reset();
+                session.getEmulator().setCursorStyle();
+            }
+        }
+    }
+
+    public void updateBackgroundColor() {
+        if (mActivity.isFinishing() || mActivity.isDestroyed() || mActivity.getWindow() == null) return;
+        TerminalSession session = mActivity.getCurrentSession();
+        int backgroundColor;
+        if (session != null && session.getEmulator() != null) {
+            backgroundColor = session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        } else {
+            backgroundColor = TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        }
+        mActivity.getWindow().getDecorView().setBackgroundColor(backgroundColor);
     }
 
 }

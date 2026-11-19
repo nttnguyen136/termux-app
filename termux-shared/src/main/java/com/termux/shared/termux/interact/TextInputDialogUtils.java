@@ -1,14 +1,21 @@
 package com.termux.shared.termux.interact;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.res.ColorStateList;
 import android.text.Selection;
 import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.view.ViewCompat;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 
 public final class TextInputDialogUtils {
 
@@ -21,8 +28,12 @@ public final class TextInputDialogUtils {
                                  int neutralButtonText, final TextSetListener onNeutral,
                                  int negativeButtonText, final TextSetListener onNegative,
                                  final DialogInterface.OnDismissListener onDismiss) {
+        final TermuxColorPalette palette = TermuxThemeManager.getActivePalette(activity);
         final EditText input = new EditText(activity);
         input.setSingleLine();
+        input.setTextColor(palette.onSurface);
+        input.setHintTextColor(palette.onSurfaceVariant);
+        ViewCompat.setBackgroundTintList(input, ColorStateList.valueOf(palette.accent));
         if (initialText != null) {
             input.setText(initialText);
             Selection.setSelection(input.getText(), initialText.length());
@@ -47,7 +58,7 @@ public final class TextInputDialogUtils {
         layout.setPadding(paddingTopAndSides, paddingTopAndSides, paddingTopAndSides, paddingBottom);
         layout.addView(input);
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(activity)
             .setTitle(titleText).setView(layout)
             .setPositiveButton(positiveButtonText, (d, whichButton) -> onPositive.onTextSet(input.getText().toString()));
 

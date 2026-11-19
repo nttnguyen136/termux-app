@@ -1,17 +1,20 @@
 package com.termux.shared.interact;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import androidx.appcompat.app.AlertDialog;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.shared.R;
 import com.termux.shared.logger.Logger;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 
 public class MessageDialogUtils {
 
@@ -51,20 +54,27 @@ public class MessageDialogUtils {
                                    final DialogInterface.OnClickListener onNegativeButton,
                                    final DialogInterface.OnDismissListener onDismiss) {
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(context, androidx.appcompat.R.style.Theme_AppCompat_Light_Dialog);
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(context);
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(context);
 
-        LayoutInflater inflater = (LayoutInflater) context.getSystemService( Context.LAYOUT_INFLATER_SERVICE );
-        View view = inflater.inflate(R.layout.dialog_show_message, null);
+        LayoutInflater inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        View view = inflater != null ? inflater.inflate(R.layout.dialog_show_message, null) : null;
         if (view != null) {
+            view.setBackgroundColor(palette.surfaceContainerHigh);
             builder.setView(view);
 
             TextView titleView = view.findViewById(R.id.dialog_title);
-            if (titleView != null)
+            if (titleView != null) {
                 titleView.setText(titleText);
+                titleView.setTextColor(palette.onSurface);
+            }
 
             TextView messageView = view.findViewById(R.id.dialog_message);
-            if (messageView != null)
+            if (messageView != null) {
                 messageView.setText(messageText);
+                messageView.setTextColor(palette.onSurfaceVariant);
+                messageView.setLinkTextColor(palette.accent);
+            }
         }
 
         if (positiveText == null)
@@ -80,13 +90,13 @@ public class MessageDialogUtils {
         AlertDialog dialog = builder.create();
 
         dialog.setOnShowListener(dialogInterface -> {
-            Logger.logError("dialog");
-            Button button = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (button != null)
-                button.setTextColor(Color.BLACK);
-            button = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-            if (button != null)
-                button.setTextColor(Color.BLACK);
+            Logger.logVerbose("MessageDialogUtils", "Showing Material 3 message dialog");
+            Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (positiveButton != null)
+                positiveButton.setTextColor(palette.accent);
+            Button negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            if (negativeButton != null)
+                negativeButton.setTextColor(palette.onSurfaceVariant);
         });
 
         dialog.show();

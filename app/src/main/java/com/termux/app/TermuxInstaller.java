@@ -1,8 +1,6 @@
 package com.termux.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
@@ -10,7 +8,13 @@ import android.system.Os;
 import android.util.Pair;
 import android.view.WindowManager;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.R;
+import com.termux.app.shell.BootstrapProgressListener;
+import com.termux.app.shell.ZshBundleInstaller;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.file.TermuxFileUtils;
@@ -63,6 +67,12 @@ final class TermuxInstaller {
 
     /** Performs bootstrap setup if necessary. */
     static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+        setupBootstrapIfNeeded(activity, whenDone, null);
+    }
+
+    /** Performs bootstrap setup if necessary, reporting progress stages to {@code externalListener}. */
+    static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone,
+                                       @Nullable final BootstrapProgressListener externalListener) {
         String bootstrapErrorMessage;
         Error filesDirectoryAccessibleError;
 
@@ -114,44 +124,70 @@ final class TermuxInstaller {
             Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
         }
 
-        final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
+        final BootstrapProgressDialog progress = BootstrapProgressDialog.show(activity);
+        final BootstrapProgressListener effectiveListener = new BootstrapProgressListener() {
+            @Override
+            public void onStageChanged(@NonNull final String title, @Nullable final String detail, final int progressPercent) {
+                activity.runOnUiThread(() -> {
+                    try {
+                        progress.updateStage(title, detail, progressPercent);
+                    } catch (RuntimeException ignored) {
+                        // Activity already dismissed - ignore.
+                    }
+                });
+                if (externalListener != null) {
+                    externalListener.onStageChanged(title, detail, progressPercent);
+                }
+            }
+        };
+
         new Thread() {
             @Override
             public void run() {
                 try {
                     Logger.logInfo(LOG_TAG, "Installing " + TermuxConstants.TERMUX_APP_NAME + " bootstrap packages.");
 
+                    notifyStage(effectiveListener, activity,
+                        R.string.bootstrap_stage_preparing_title,
+                        R.string.bootstrap_stage_preparing_detail,
+                        10);
+
                     Error error;
 
                     // Delete prefix staging directory or any file at its destination
                     error = FileUtils.deleteFile("termux prefix staging directory", TERMUX_STAGING_PREFIX_DIR_PATH, true);
                     if (error != null) {
-                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                        showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                         return;
                     }
 
                     // Delete prefix directory or any file at its destination
                     error = FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
                     if (error != null) {
-                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                        showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                         return;
                     }
 
                     // Create prefix staging directory if it does not already exist and set required permissions
                     error = TermuxFileUtils.isTermuxPrefixStagingDirectoryAccessible(true, true);
                     if (error != null) {
-                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                        showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                         return;
                     }
 
                     // Create prefix directory if it does not already exist and set required permissions
                     error = TermuxFileUtils.isTermuxPrefixDirectoryAccessible(true, true);
                     if (error != null) {
-                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                        showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                         return;
                     }
 
                     Logger.logInfo(LOG_TAG, "Extracting bootstrap zip to prefix staging directory \"" + TERMUX_STAGING_PREFIX_DIR_PATH + "\".");
+
+                    notifyStage(effectiveListener, activity,
+                        R.string.bootstrap_stage_extracting_title,
+                        R.string.bootstrap_stage_extracting_detail,
+                        25);
 
                     final byte[] buffer = new byte[8096];
                     final List<Pair<String, String>> symlinks = new ArrayList<>(50);
@@ -173,7 +209,7 @@ final class TermuxInstaller {
 
                                     error = ensureDirectoryExists(new File(newPath).getParentFile());
                                     if (error != null) {
-                                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                                        showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                                         return;
                                     }
                                 }
@@ -184,7 +220,7 @@ final class TermuxInstaller {
 
                                 error = ensureDirectoryExists(isDirectory ? targetFile : targetFile.getParentFile());
                                 if (error != null) {
-                                    showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
+                                    showBootstrapErrorDialog(activity, whenDone, externalListener, Error.getErrorMarkdownString(error));
                                     return;
                                 }
 
@@ -204,6 +240,11 @@ final class TermuxInstaller {
                         }
                     }
 
+                    notifyStage(effectiveListener, activity,
+                        R.string.bootstrap_stage_symlinks_title,
+                        R.string.bootstrap_stage_symlinks_detail,
+                        50);
+
                     if (symlinks.isEmpty())
                         throw new RuntimeException("No SYMLINKS.txt encountered");
                     for (Pair<String, String> symlink : symlinks) {
@@ -221,10 +262,31 @@ final class TermuxInstaller {
                     // Recreate env file since termux prefix was wiped earlier
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
 
+                    // Offline first-run Zsh + Oh My Zsh + plugins + theme + welcome banner setup
+                    try {
+                        ZshBundleInstaller.installIfNeeded(
+                            activity,
+                            TERMUX_PREFIX_DIR,
+                            TermuxConstants.TERMUX_HOME_DIR,
+                            effectiveListener
+                        );
+                    } catch (Exception e) {
+                        Logger.logStackTraceWithMessage(
+                            LOG_TAG,
+                            "Offline shell bundle setup failed; falling back to default shell",
+                            e
+                        );
+                    }
+
+                    notifyStage(effectiveListener, activity,
+                        R.string.shell_setup_stage_complete_title,
+                        R.string.shell_setup_stage_complete_detail,
+                        100);
+
                     activity.runOnUiThread(whenDone);
 
                 } catch (final Exception e) {
-                    showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
+                    showBootstrapErrorDialog(activity, whenDone, externalListener, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
 
                 } finally {
                     activity.runOnUiThread(() -> {
@@ -239,7 +301,25 @@ final class TermuxInstaller {
         }.start();
     }
 
+    private static void notifyStage(
+            @Nullable BootstrapProgressListener listener,
+            @NonNull Context context,
+            int titleResId,
+            int detailResId,
+            int progressPercent) {
+        if (listener == null) {
+            return;
+        }
+        listener.onStageChanged(context.getString(titleResId), context.getString(detailResId), progressPercent);
+    }
+
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {
+        showBootstrapErrorDialog(activity, whenDone, null, message);
+    }
+
+    static void showBootstrapErrorDialog(Activity activity, Runnable whenDone,
+                                         @Nullable BootstrapProgressListener externalListener,
+                                         String message) {
         Logger.logErrorExtended(LOG_TAG, "Bootstrap Error:\n" + message);
 
         // Send a notification with the exception so that the user knows why bootstrap setup failed
@@ -247,7 +327,7 @@ final class TermuxInstaller {
 
         activity.runOnUiThread(() -> {
             try {
-                new AlertDialog.Builder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
+                new MaterialAlertDialogBuilder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
                     .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {
                         dialog.dismiss();
                         activity.finish();
@@ -255,7 +335,7 @@ final class TermuxInstaller {
                     .setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
                         dialog.dismiss();
                         FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
-                        TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone);
+                        TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone, externalListener);
                     }).show();
             } catch (WindowManager.BadTokenException e1) {
                 // Activity already dismissed - ignore.

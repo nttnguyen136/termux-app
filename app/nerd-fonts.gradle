@@ -1,0 +1,417 @@
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URI
+import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.security.DigestInputStream
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import kotlin.jvm.functions.Function1
+import org.gradle.api.Action
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
+final String NERD_FONTS_RELEASE_TAG = "v3.5.1"
+
+// Pipe-delimited specs: fileName|ttfSha256|primaryRawTtfUrl|fallbackZipUrl|fallbackZipSha256|zipEntryName
+final List<String> NERD_FONT_SPECS = [
+    [
+        "JetBrainsMonoNerdFontMono-Regular.ttf",
+        "f2a5ea6cfab397445ffab00c0370927b66d61e560a05db5db271b42006381c1a",
+        "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/${NERD_FONTS_RELEASE_TAG}/patched-fonts/JetBrainsMono/Ligatures/JetBrainsMonoNerdFontMono-Regular.ttf",
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONTS_RELEASE_TAG}/JetBrainsMono.zip",
+        "fab782a66f7d3019da64f6572db9fc5d3a4bcb19f9fa13e2d8a62e3693d6396e",
+        "JetBrainsMonoNerdFontMono-Regular.ttf"
+    ].join("|"),
+    [
+        "MesloLGSNerdFontMono-Regular.ttf",
+        "d14fdc035e41392917b9d665f91af5570b717191b63875532b5bb1b5d5aafcf8",
+        "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/${NERD_FONTS_RELEASE_TAG}/patched-fonts/Meslo/S/MesloLGSNerdFontMono-Regular.ttf",
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONTS_RELEASE_TAG}/Meslo.zip",
+        "fb104893ecd8f57e8afacbc0a7086b42657120448d056d6093c728a9afb8e237",
+        "MesloLGSNerdFontMono-Regular.ttf"
+    ].join("|"),
+    [
+        "FiraCodeNerdFontMono-Regular.ttf",
+        "53eebbaaa09c483ebb27fdd5cf21073cc4b760308e5d666728e9db2f41616c00",
+        "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/${NERD_FONTS_RELEASE_TAG}/patched-fonts/FiraCode/FiraCodeNerdFontMono-Regular.ttf",
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONTS_RELEASE_TAG}/FiraCode.zip",
+        "239395baf60c89b2eaf4862b6b09db0ef95605cd3e8eef51c00345822a81a665",
+        "FiraCodeNerdFontMono-Regular.ttf"
+    ].join("|")
+]
+
+File resolveNerdFontsCacheDir(String releaseTag) {
+    def overridePath = project.findProperty("termuxNerdFontsCacheDir")?.toString()
+        ?: System.getenv("TERMUX_NERD_FONTS_CACHE_DIR")
+    if (overridePath != null && !overridePath.trim().isEmpty()) {
+        return new File(overridePath.trim(), releaseTag)
+    }
+    File userCache = new File(project.gradle.gradleUserHomeDir, "caches/termux-nerd-fonts/${releaseTag}")
+    if (userCache.exists() || userCache.mkdirs()) {
+        return userCache
+    }
+    return layout.buildDirectory.dir("nerd-fonts-cache/${releaseTag}").get().asFile
+}
+
+abstract class NerdFontDownloadSupport {
+    static final String USER_AGENT = "termux-app-gradle/1.0"
+    static final int CONNECT_TIMEOUT_MS = 30_000
+    static final int READ_TIMEOUT_MS = 120_000
+    static final int MAX_REDIRECTS = 5
+
+    static String sha256Hex(File file) {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256")
+        byte[] buffer = new byte[16_384]
+        new BufferedInputStream(new FileInputStream(file)).withCloseable { InputStream input ->
+            int read
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        return toHex(digest.digest())
+    }
+
+    static String toHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2)
+        for (byte b : bytes) {
+            sb.append(String.format(Locale.ROOT, "%02x", b & 0xFF))
+        }
+        return sb.toString()
+    }
+
+    static String downloadToFile(String urlString, File targetFile) {
+        String currentUrl = urlString
+        HttpURLConnection conn = null
+        boolean ok = false
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            conn = (HttpURLConnection) URI.create(currentUrl).toURL().openConnection()
+            conn.setInstanceFollowRedirects(false)
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS)
+            conn.setReadTimeout(READ_TIMEOUT_MS)
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            conn.setRequestProperty("Accept", "*/*")
+
+            int status = conn.getResponseCode()
+            if (status == HttpURLConnection.HTTP_MOVED_PERM
+                || status == HttpURLConnection.HTTP_MOVED_TEMP
+                || status == HttpURLConnection.HTTP_SEE_OTHER
+                || status == 307
+                || status == 308) {
+                String location = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (location == null || location.trim().isEmpty()) {
+                    throw new IOException("Redirect without Location header from " + currentUrl)
+                }
+                currentUrl = URI.create(currentUrl).resolve(location).toString()
+                continue
+            }
+            if (status != HttpURLConnection.HTTP_OK) {
+                conn.disconnect()
+                throw new IOException("HTTP " + status + " while downloading " + currentUrl)
+            }
+            ok = true
+            break
+        }
+
+        if (!ok || conn == null) {
+            throw new IOException("Too many redirects while downloading " + urlString)
+        }
+
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256")
+            byte[] buffer = new byte[16_384]
+            new DigestInputStream(new BufferedInputStream(conn.getInputStream()), digest).withCloseable { InputStream input ->
+                new BufferedOutputStream(new FileOutputStream(targetFile)).withCloseable { BufferedOutputStream out ->
+                    int read
+                    while ((read = input.read(buffer)) != -1) {
+                        out.write(buffer, 0, read)
+                    }
+                }
+            }
+            return toHex(digest.digest())
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    static void atomicMove(File source, File destination) {
+        try {
+            Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (IOException ignored) {
+            Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+
+    static Map<String, String> parseSpec(String spec) {
+        String[] parts = spec.split("\\|", -1)
+        if (parts.length != 6) {
+            throw new GradleException("Invalid Nerd Font spec: " + spec)
+        }
+        return [
+            fileName      : parts[0],
+            ttfSha256     : parts[1],
+            primaryUrl    : parts[2],
+            fallbackZipUrl: parts[3],
+            fallbackZipSha: parts[4],
+            zipEntryName  : parts[5]
+        ]
+    }
+}
+
+abstract class DownloadNerdFontsTask extends DefaultTask {
+    @Input
+    abstract Property<String> getReleaseTag()
+
+    @Input
+    abstract ListProperty<String> getFontSpecs()
+
+    @Internal
+    abstract DirectoryProperty getCacheDir()
+
+    @OutputFile
+    abstract RegularFileProperty getManifestFile()
+
+    @TaskAction
+    void execute() {
+        File cache = cacheDir.get().asFile
+        if (!cache.exists() && !cache.mkdirs()) {
+            throw new GradleException("Failed to create Nerd Fonts cache directory: " + cache.absolutePath)
+        }
+
+        File lockFile = new File(cache, ".download.lock")
+        StringBuilder manifest = new StringBuilder()
+        manifest.append("release=").append(releaseTag.get()).append("\n")
+
+        FileChannel.open(
+            lockFile.toPath(),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE
+        ).withCloseable { FileChannel channel ->
+            FileLock lock = channel.lock()
+            try {
+                for (String rawSpec : fontSpecs.get()) {
+                    Map<String, String> spec = NerdFontDownloadSupport.parseSpec(rawSpec)
+                    File cachedTtf = new File(cache, spec.fileName)
+
+                    if (cachedTtf.isFile()) {
+                        String existingSha = NerdFontDownloadSupport.sha256Hex(cachedTtf)
+                        if (existingSha == spec.ttfSha256) {
+                            manifest.append(spec.fileName).append("=")
+                                .append(existingSha).append(" ")
+                                .append(cachedTtf.length()).append("\n")
+                            continue
+                        }
+                        logger.warn("Deleting cached Nerd Font with mismatched SHA-256: {} (expected={}, actual={})",
+                            cachedTtf.absolutePath, spec.ttfSha256, existingSha)
+                        cachedTtf.delete()
+                    }
+
+                    fetchAndVerifyFont(spec, cache, cachedTtf)
+                    manifest.append(spec.fileName).append("=")
+                        .append(spec.ttfSha256).append(" ")
+                        .append(cachedTtf.length()).append("\n")
+                }
+            } finally {
+                lock.release()
+            }
+        }
+
+        File outManifest = manifestFile.get().asFile
+        outManifest.parentFile.mkdirs()
+        Files.write(outManifest.toPath(), manifest.toString().getBytes(StandardCharsets.UTF_8))
+    }
+
+    protected void fetchAndVerifyFont(Map<String, String> spec, File cache, File destination) {
+        String token = UUID.randomUUID().toString()
+        File tempTtf = new File(cache, spec.fileName + ".part." + token)
+        try {
+            logger.lifecycle("Downloading Nerd Font {} from {} ...", spec.fileName, spec.primaryUrl)
+            String actualSha = NerdFontDownloadSupport.downloadToFile(spec.primaryUrl, tempTtf)
+            if (actualSha != spec.ttfSha256) {
+                throw new GradleException(
+                    "SHA-256 mismatch for " + spec.primaryUrl
+                        + ": expected " + spec.ttfSha256 + ", got " + actualSha
+                )
+            }
+            NerdFontDownloadSupport.atomicMove(tempTtf, destination)
+            return
+        } catch (IOException primaryError) {
+            tempTtf.delete()
+            logger.warn("Primary Nerd Font download failed ({}); falling back to release zip {}",
+                primaryError.message, spec.fallbackZipUrl)
+        } catch (Throwable t) {
+            tempTtf.delete()
+            throw t
+        }
+
+        // Fallback: official release .zip archive (verifies BOTH .zip SHA-256 and extracted .ttf SHA-256)
+        File tempZip = new File(cache, spec.fileName + ".zip.part." + token)
+        try {
+            logger.lifecycle("Downloading Nerd Font archive {} ...", spec.fallbackZipUrl)
+            String actualZipSha = NerdFontDownloadSupport.downloadToFile(spec.fallbackZipUrl, tempZip)
+            if (actualZipSha != spec.fallbackZipSha) {
+                throw new GradleException(
+                    "SHA-256 mismatch for archive " + spec.fallbackZipUrl
+                        + ": expected " + spec.fallbackZipSha + ", got " + actualZipSha
+                )
+            }
+            new ZipFile(tempZip).withCloseable { ZipFile zf ->
+                ZipEntry entry = zf.getEntry(spec.zipEntryName)
+                if (entry == null) {
+                    throw new GradleException(
+                        "Expected entry '" + spec.zipEntryName + "' not found in " + spec.fallbackZipUrl
+                    )
+                }
+                MessageDigest digest = MessageDigest.getInstance("SHA-256")
+                byte[] buffer = new byte[16_384]
+                new DigestInputStream(new BufferedInputStream(zf.getInputStream(entry)), digest).withCloseable { InputStream input ->
+                    new BufferedOutputStream(new FileOutputStream(tempTtf)).withCloseable { BufferedOutputStream out ->
+                        int read
+                        while ((read = input.read(buffer)) != -1) {
+                            out.write(buffer, 0, read)
+                        }
+                    }
+                }
+                String extractedSha = NerdFontDownloadSupport.toHex(digest.digest())
+                if (extractedSha != spec.ttfSha256) {
+                    throw new GradleException(
+                        "SHA-256 mismatch for extracted " + spec.zipEntryName
+                            + ": expected " + spec.ttfSha256 + ", got " + extractedSha
+                    )
+                }
+            }
+            NerdFontDownloadSupport.atomicMove(tempTtf, destination)
+        } finally {
+            tempZip.delete()
+            tempTtf.delete()
+        }
+    }
+}
+
+abstract class PrepareNerdFontAssetsTask extends DefaultTask {
+    @Input
+    abstract ListProperty<String> getFontSpecs()
+
+    @InputFile
+    @PathSensitive(PathSensitivity.NONE)
+    abstract RegularFileProperty getManifestFile()
+
+    @Internal
+    abstract DirectoryProperty getCacheDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @TaskAction
+    void execute() {
+        File cache = cacheDir.get().asFile
+        File fontsOutDir = new File(outputDir.get().asFile, "fonts")
+        if (!fontsOutDir.exists() && !fontsOutDir.mkdirs()) {
+            throw new GradleException("Failed to create Nerd Fonts asset directory: " + fontsOutDir.absolutePath)
+        }
+
+        Set<String> expectedFiles = new HashSet<>()
+        for (String rawSpec : fontSpecs.get()) {
+            Map<String, String> spec = NerdFontDownloadSupport.parseSpec(rawSpec)
+            expectedFiles.add(spec.fileName)
+
+            File src = new File(cache, spec.fileName)
+            if (!src.isFile()) {
+                throw new GradleException("Missing cached Nerd Font file: " + src.absolutePath)
+            }
+            String actualSha = NerdFontDownloadSupport.sha256Hex(src)
+            if (actualSha != spec.ttfSha256) {
+                throw new GradleException(
+                    "Cached Nerd Font SHA-256 verification failed for " + src.absolutePath
+                        + ": expected " + spec.ttfSha256 + ", got " + actualSha
+                )
+            }
+
+            File dst = new File(fontsOutDir, spec.fileName)
+            if (!dst.isFile() || NerdFontDownloadSupport.sha256Hex(dst) != spec.ttfSha256) {
+                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+
+        // Remove any stale files if the font list ever shrinks
+        File[] existing = fontsOutDir.listFiles()
+        if (existing != null) {
+            for (File f : existing) {
+                if (!expectedFiles.contains(f.name)) {
+                    f.delete()
+                }
+            }
+        }
+    }
+}
+
+final File sharedNerdFontsCacheDir = resolveNerdFontsCacheDir(NERD_FONTS_RELEASE_TAG)
+
+def downloadNerdFontsTask = tasks.register("downloadNerdFonts", DownloadNerdFontsTask) { task ->
+    task.group = "termux"
+    task.description = "Downloads and SHA-256-verifies bundled Mono Nerd Fonts into the local cache."
+    task.releaseTag.set(NERD_FONTS_RELEASE_TAG)
+    task.fontSpecs.set(NERD_FONT_SPECS)
+    task.cacheDir.set(sharedNerdFontsCacheDir)
+    task.manifestFile.set(layout.buildDirectory.file("intermediates/nerd-fonts/download-manifest.txt"))
+    task.outputs.upToDateWhen {
+        NERD_FONT_SPECS.every { String rawSpec ->
+            Map<String, String> spec = NerdFontDownloadSupport.parseSpec(rawSpec)
+            File f = new File(sharedNerdFontsCacheDir, spec.fileName)
+            f.isFile() && f.length() > 0L
+        }
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().all(), { variant ->
+    if (variant.sources.assets == null) {
+        return
+    }
+    String capName = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
+    def prepareTask = tasks.register("prepare${capName}NerdFontAssets", PrepareNerdFontAssetsTask) { task ->
+        task.group = "termux"
+        task.description = "Stages verified Mono Nerd Font assets for variant '${variant.name}'."
+        task.fontSpecs.set(NERD_FONT_SPECS)
+        task.manifestFile.set(downloadNerdFontsTask.flatMap { it.manifestFile })
+        task.cacheDir.set(sharedNerdFontsCacheDir)
+    }
+    variant.sources.assets.addGeneratedSourceDirectory(
+        prepareTask,
+        { PrepareNerdFontAssetsTask task -> task.outputDir } as Function1
+    )
+} as Action)

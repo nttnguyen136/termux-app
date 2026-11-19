@@ -2,6 +2,7 @@ package com.termux.app.activities;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.ViewGroup;
@@ -14,6 +15,8 @@ import android.widget.RelativeLayout;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 
 /** Basic embedded browser for viewing help pages. */
 public final class HelpActivity extends AppCompatActivity {
@@ -24,15 +27,21 @@ public final class HelpActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(this);
+        TermuxThemeManager.applyActivityChrome(this, palette);
+
         final RelativeLayout progressLayout = new RelativeLayout(this);
+        progressLayout.setBackgroundColor(palette.surface);
         RelativeLayout.LayoutParams lParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lParams.addRule(RelativeLayout.CENTER_IN_PARENT);
         ProgressBar progressBar = new ProgressBar(this);
         progressBar.setIndeterminate(true);
+        progressBar.setIndeterminateTintList(ColorStateList.valueOf(palette.accent));
         progressBar.setLayoutParams(lParams);
         progressLayout.addView(progressBar);
 
         mWebView = new WebView(this);
+        mWebView.setBackgroundColor(palette.surface);
         WebSettings settings = mWebView.getSettings();
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         setContentView(progressLayout);

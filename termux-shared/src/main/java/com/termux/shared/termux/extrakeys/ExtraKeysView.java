@@ -19,6 +19,11 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -30,10 +35,13 @@ import android.widget.PopupWindow;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.ColorUtils;
 
 import com.google.android.material.button.MaterialButton;
 import com.termux.shared.R;
 import com.termux.shared.termux.terminal.io.TerminalExtraKeys;
+import com.termux.shared.termux.theme.TermuxAppearanceAware;
+import com.termux.shared.termux.theme.TermuxColorPalette;
 import com.termux.shared.theme.ThemeUtils;
 
 /**
@@ -73,7 +81,7 @@ import com.termux.shared.theme.ThemeUtils;
  * {@link TerminalExtraKeys } to handle Termux app specific logic and
  * leave the rest to the super class.
  */
-public final class ExtraKeysView extends GridLayout {
+public final class ExtraKeysView extends GridLayout implements TermuxAppearanceAware {
 
     /** The client for the {@link ExtraKeysView}. */
     public interface IExtraKeysView {
@@ -176,6 +184,23 @@ public final class ExtraKeysView extends GridLayout {
     /** The background color for the extra keys button when its active. Defaults to
      * {@link #DEFAULT_BUTTON_ACTIVE_BACKGROUND_COLOR}. */
     protected int mButtonActiveBackgroundColor;
+    /** The text color for a locked special keycap button. */
+    protected int mButtonLockedTextColor;
+    /** The background color for a locked special keycap button. */
+    protected int mButtonLockedBackgroundColor;
+    /** The subtle outline color for keycaps. */
+    protected int mButtonStrokeColor = Color.TRANSPARENT;
+    /** The toolbar container background color behind the keycaps. */
+    protected int mToolbarSurfaceColor = Color.TRANSPARENT;
+    /** The active monospace/Nerd Font typeface used for extra key labels. */
+    @NonNull
+    protected Typeface mButtonTypeface = Typeface.MONOSPACE;
+
+    private final int mKeycapCornerRadiusPx;
+    private final int mKeycapMarginHorizontalPx;
+    private final int mKeycapMarginVerticalPx;
+    private final int mKeycapStrokeWidthPx;
+    private final int mPopupElevationPx;
 
     /** Defines whether text for the extra keys button should be all capitalized automatically. */
     protected boolean mButtonTextAllCaps = true;
@@ -212,6 +237,12 @@ public final class ExtraKeysView extends GridLayout {
     public ExtraKeysView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
+        mKeycapCornerRadiusPx = dpToPx(context, 6f);
+        mKeycapMarginHorizontalPx = dpToPx(context, 2f);
+        mKeycapMarginVerticalPx = dpToPx(context, 2f);
+        mKeycapStrokeWidthPx = Math.max(1, dpToPx(context, 0.75f));
+        mPopupElevationPx = dpToPx(context, 6f);
+
         setRepetitiveKeys(ExtraKeysConstants.PRIMARY_REPETITIVE_KEYS);
         setSpecialButtons(getDefaultSpecialButtons(this));
 
@@ -223,6 +254,13 @@ public final class ExtraKeysView extends GridLayout {
 
         setLongPressTimeout(ViewConfiguration.getLongPressTimeout());
         setLongPressRepeatDelay(DEFAULT_LONG_PRESS_REPEAT_DELAY);
+        setPadding(mKeycapMarginHorizontalPx, mKeycapMarginVerticalPx, mKeycapMarginHorizontalPx, mKeycapMarginVerticalPx);
+        setClipToPadding(false);
+    }
+
+    private static int dpToPx(@NonNull Context context, float dp) {
+        return Math.round(TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics()));
     }
 
 
@@ -281,6 +319,112 @@ public final class ExtraKeysView extends GridLayout {
         mButtonActiveTextColor = buttonActiveTextColor;
         mButtonBackgroundColor = buttonBackgroundColor;
         mButtonActiveBackgroundColor = buttonActiveBackgroundColor;
+        mButtonLockedTextColor = buttonActiveTextColor;
+        mButtonLockedBackgroundColor = buttonActiveBackgroundColor;
+        refreshAllKeycapStyles();
+    }
+
+    @Override
+    public void applyAppearance(@NonNull TermuxColorPalette palette, @NonNull Typeface typeface) {
+        mToolbarSurfaceColor = palette.toolbarSurface;
+        mButtonTextColor = palette.keycapText;
+        mButtonBackgroundColor = palette.keycapBackground;
+        mButtonActiveTextColor = palette.keycapActiveText;
+        mButtonActiveBackgroundColor = palette.keycapActiveBackground;
+        mButtonLockedTextColor = palette.keycapLockedText;
+        mButtonLockedBackgroundColor = palette.keycapLockedBackground;
+        mButtonStrokeColor = ColorUtils.setAlphaComponent(palette.outline, 96);
+        mButtonTypeface = typeface;
+
+        setBackgroundColor(mToolbarSurfaceColor);
+        refreshAllKeycapStyles();
+    }
+
+    public int getButtonLockedTextColor() {
+        return mButtonLockedTextColor;
+    }
+
+    public int getButtonLockedBackgroundColor() {
+        return mButtonLockedBackgroundColor;
+    }
+
+    @NonNull
+    public Typeface getButtonTypeface() {
+        return mButtonTypeface;
+    }
+
+    public int getKeycapCornerRadiusPx() {
+        return mKeycapCornerRadiusPx;
+    }
+
+    /** Refreshes the rounded keycap styling, colors, and typeface for all current child buttons. */
+    public void refreshAllKeycapStyles() {
+        int childCount = getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            View child = getChildAt(i);
+            if (child instanceof MaterialButton) {
+                MaterialButton button = (MaterialButton) child;
+                SpecialButtonState specialState = findSpecialButtonStateForButton(button);
+                applyKeycapStyle(button, false, specialState);
+            }
+        }
+    }
+
+    void updateSpecialButtonVisualState(@NonNull SpecialButtonState state) {
+        for (MaterialButton button : state.buttons) {
+            applyKeycapStyle(button, false, state);
+        }
+    }
+
+    @Nullable
+    private SpecialButtonState findSpecialButtonStateForButton(@NonNull MaterialButton button) {
+        if (mSpecialButtons == null) return null;
+        for (SpecialButtonState state : mSpecialButtons.values()) {
+            if (state.buttons.contains(button)) {
+                return state;
+            }
+        }
+        return null;
+    }
+
+    private void applyKeycapStyle(@NonNull MaterialButton button, boolean isPressed, @Nullable SpecialButtonState specialState) {
+        boolean isLocked = specialState != null && specialState.isLocked;
+        boolean isActive = specialState != null && specialState.isActive;
+
+        int bgColor;
+        int textColor;
+        if (isPressed) {
+            bgColor = mButtonActiveBackgroundColor;
+            textColor = mButtonActiveTextColor;
+        } else if (isLocked) {
+            bgColor = mButtonLockedBackgroundColor;
+            textColor = mButtonLockedTextColor;
+        } else if (isActive) {
+            bgColor = mButtonActiveBackgroundColor;
+            textColor = mButtonActiveTextColor;
+        } else {
+            bgColor = mButtonBackgroundColor;
+            textColor = mButtonTextColor;
+        }
+
+        button.setCornerRadius(mKeycapCornerRadiusPx);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setMinHeight(0);
+        button.setMinWidth(0);
+        button.setMinimumHeight(0);
+        button.setMinimumWidth(0);
+        button.setBackgroundTintList(ColorStateList.valueOf(bgColor));
+        button.setTextColor(textColor);
+        button.setTypeface(mButtonTypeface);
+        button.setRippleColor(ColorStateList.valueOf(ColorUtils.setAlphaComponent(mButtonActiveTextColor, 48)));
+
+        if (mButtonStrokeColor != Color.TRANSPARENT && !isActive && !isLocked && !isPressed) {
+            button.setStrokeColor(ColorStateList.valueOf(mButtonStrokeColor));
+            button.setStrokeWidth(mKeycapStrokeWidthPx);
+        } else {
+            button.setStrokeWidth(0);
+        }
     }
 
 
@@ -401,6 +545,10 @@ public final class ExtraKeysView extends GridLayout {
             for (int col = 0; col < buttons[row].length; col++) {
                 final ExtraKeyButton buttonInfo = buttons[row][col];
 
+                final SpecialButtonState specialState = isSpecialButton(buttonInfo)
+                    ? mSpecialButtons.get(SpecialButton.valueOf(buttonInfo.getKey()))
+                    : null;
+
                 MaterialButton button;
                 if (isSpecialButton(buttonInfo)) {
                     button = createSpecialButton(buttonInfo.getKey(), true);
@@ -410,9 +558,9 @@ public final class ExtraKeysView extends GridLayout {
                 }
 
                 button.setText(buttonInfo.getDisplay());
-                button.setTextColor(mButtonTextColor);
                 button.setAllCaps(mButtonTextAllCaps);
                 button.setPadding(0, 0, 0, 0);
+                applyKeycapStyle(button, false, specialState);
 
                 button.setOnClickListener(view -> {
                     performExtraKeyButtonHapticFeedback(view, buttonInfo, button);
@@ -422,7 +570,7 @@ public final class ExtraKeysView extends GridLayout {
                 button.setOnTouchListener((view, event) -> {
                     switch (event.getAction()) {
                         case MotionEvent.ACTION_DOWN:
-                            view.setBackgroundColor(mButtonActiveBackgroundColor);
+                            applyKeycapStyle(button, true, specialState);
                             // Start long press scheduled executors which will be stopped in next MotionEvent
                             startScheduledExecutors(view, buttonInfo, button);
                             return true;
@@ -432,23 +580,23 @@ public final class ExtraKeysView extends GridLayout {
                                 // Show popup on swipe up
                                 if (mPopupWindow == null && event.getY() < 0) {
                                     stopScheduledExecutors();
-                                    view.setBackgroundColor(mButtonBackgroundColor);
+                                    applyKeycapStyle(button, false, specialState);
                                     showPopup(view, buttonInfo.getPopup());
                                 }
                                 if (mPopupWindow != null && event.getY() > 0) {
-                                    view.setBackgroundColor(mButtonActiveBackgroundColor);
+                                    applyKeycapStyle(button, true, specialState);
                                     dismissPopup();
                                 }
                             }
                             return true;
 
                         case MotionEvent.ACTION_CANCEL:
-                            view.setBackgroundColor(mButtonBackgroundColor);
+                            applyKeycapStyle(button, false, specialState);
                             stopScheduledExecutors();
                             return true;
 
                         case MotionEvent.ACTION_UP:
-                            view.setBackgroundColor(mButtonBackgroundColor);
+                            applyKeycapStyle(button, false, specialState);
                             stopScheduledExecutors();
                             // If ACTION_UP up was not from a repetitive key or was with a key with a popup button
                             if (mLongPressCount == 0 || mPopupWindow != null) {
@@ -476,7 +624,8 @@ public final class ExtraKeysView extends GridLayout {
                 } else {
                     param.height = 0;
                 }
-                param.setMargins(0, 0, 0, 0);
+                param.setMargins(mKeycapMarginHorizontalPx, mKeycapMarginVerticalPx,
+                    mKeycapMarginHorizontalPx, mKeycapMarginVerticalPx);
                 param.columnSpec = GridLayout.spec(col, GridLayout.FILL, 1.f);
                 param.rowSpec = GridLayout.spec(row, GridLayout.FILL, 1.f);
                 button.setLayoutParams(param);
@@ -595,19 +744,17 @@ public final class ExtraKeysView extends GridLayout {
             if (button == null) return;
         } else {
             button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
-            button.setTextColor(mButtonTextColor);
         }
         button.setText(extraButton.getDisplay());
         button.setAllCaps(mButtonTextAllCaps);
         button.setPadding(0, 0, 0, 0);
-        button.setMinHeight(0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setMinimumHeight(0);
         button.setWidth(width);
         button.setHeight(height);
-        button.setBackgroundColor(mButtonActiveBackgroundColor);
+        applyKeycapStyle(button, true, null);
+        button.setElevation(mPopupElevationPx);
         mPopupWindow = new PopupWindow(this);
+        mPopupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        mPopupWindow.setElevation(mPopupElevationPx);
         mPopupWindow.setWidth(LayoutParams.WRAP_CONTENT);
         mPopupWindow.setHeight(LayoutParams.WRAP_CONTENT);
         mPopupWindow.setContentView(button);
@@ -617,6 +764,7 @@ public final class ExtraKeysView extends GridLayout {
     }
 
     public void dismissPopup() {
+        if (mPopupWindow == null) return;
         mPopupWindow.setContentView(null);
         mPopupWindow.dismiss();
         mPopupWindow = null;
@@ -659,7 +807,7 @@ public final class ExtraKeysView extends GridLayout {
         if (state == null) return null;
         state.setIsCreated(true);
         MaterialButton button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
-        button.setTextColor(state.isActive ? mButtonActiveTextColor : mButtonTextColor);
+        applyKeycapStyle(button, false, state);
         if (needUpdate) {
             state.buttons.add(button);
         }

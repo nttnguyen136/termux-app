@@ -51,6 +51,19 @@ import com.termux.shared.termux.interact.TextInputDialogUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.termux.app.terminal.TerminalActionsBottomSheet;
+import com.termux.app.terminal.TermuxTopTabBarController;
+import com.termux.shared.termux.theme.TermuxAppearanceAware;
+import com.termux.shared.termux.theme.TermuxAppearancePreferences;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxFontManager;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
 import com.termux.shared.theme.NightMode;
 import com.termux.shared.view.ViewUtils;
@@ -59,9 +72,13 @@ import com.termux.terminal.TerminalSessionClient;
 import com.termux.view.TerminalView;
 import com.termux.view.TerminalViewClient;
 
+import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.ColorUtils;
+import androidx.core.widget.ImageViewCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
@@ -175,6 +192,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private float mTerminalToolbarDefaultHeight;
 
+    private long mLastAppliedAppearanceRevision = -1L;
+
+    private TermuxTopTabBarController mTermuxTopTabBarController;
+
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
@@ -251,7 +272,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         setToggleKeyboardView();
 
+        mTermuxTopTabBarController = new TermuxTopTabBarController(this);
+
         registerForContextMenu(mTerminalView);
+
+        applyCurrentAppearance();
 
         FileReceiverActivity.updateFileReceiverActivityComponentsState(this);
 
@@ -289,6 +314,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         mIsVisible = true;
 
+        syncAppearanceIfNeeded();
+
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onStart();
 
@@ -308,6 +335,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logVerbose(LOG_TAG, "onResume");
 
         if (mIsInvalidState) return;
+
+        syncAppearanceIfNeeded();
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();
@@ -427,6 +456,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
         mTermuxService.setTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
+
+        if (mTermuxTerminalSessionActivityClient != null) {
+            mTermuxTerminalSessionActivityClient.applyColorsAndCursorToAllSessions();
+            mTermuxTerminalSessionActivityClient.updateBackgroundColor();
+        }
     }
 
     @Override
@@ -452,12 +486,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     private void setActivityTheme() {
-        // Update NightMode.APP_NIGHT_MODE
-        TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
+        // Synchronize NightMode.APP_NIGHT_MODE with active TermuxThemeManager palette before super.onCreate()
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(this);
+        TermuxThemeManager.syncAppNightMode(palette);
 
-        // Set activity night mode. If NightMode.SYSTEM is set, then android will automatically
-        // trigger recreation of activity when uiMode/dark mode configuration is changed so that
-        // day or night theme takes affect.
+        // Set activity night mode so day/night XML resources match the active palette.
         AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
     }
 
@@ -565,9 +598,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private void setSettingsButtonView() {
         ImageButton settingsButton = findViewById(R.id.settings_button);
-        settingsButton.setOnClickListener(v -> {
-            ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
-        });
+        if (settingsButton != null) {
+            settingsButton.setOnClickListener(v -> {
+                if (getDrawer() != null) getDrawer().closeDrawers();
+                ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
+            });
+        }
+
+        ImageButton appearanceButton = findViewById(R.id.appearance_button);
+        if (appearanceButton != null) {
+            appearanceButton.setOnClickListener(v -> {
+                if (getDrawer() != null) getDrawer().closeDrawers();
+                ActivityUtils.startActivity(this, SettingsActivity.createAppearanceStudioIntent(this));
+            });
+        }
     }
 
     private void setNewSessionButtonView() {
@@ -626,8 +670,46 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
 
+    private BottomSheetDialog mTerminalActionsBottomSheet;
+
+    public void showTerminalActionsBottomSheet() {
+        if (isFinishing() || isDestroyed()) return;
+        if (mTerminalActionsBottomSheet != null && mTerminalActionsBottomSheet.isShowing()) {
+            mTerminalActionsBottomSheet.dismiss();
+        }
+        mTerminalActionsBottomSheet = TerminalActionsBottomSheet.create(this);
+        mTerminalActionsBottomSheet.show();
+    }
+
+    public BottomSheetDialog getTerminalActionsBottomSheet() {
+        return mTerminalActionsBottomSheet;
+    }
+
+    public void resetTerminalSessionFromSheet(TerminalSession session) {
+        onResetTerminalSession(session);
+    }
+
+    public void showKillSessionDialogFromSheet(TerminalSession session) {
+        showKillSessionDialog(session);
+    }
+
+    public void toggleKeepScreenOnFromSheet() {
+        toggleKeepScreenOn();
+    }
+
+    public void showStylingDialogFromSheet() {
+        showStylingDialog();
+    }
+
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo) {
+        if (v == mTerminalView) {
+            // Replace legacy Android context menu with Material 3 Bottom Sheet while keeping
+            // text-selection ActionMode (Copy / Paste / More) intact.
+            showTerminalActionsBottomSheet();
+            return;
+        }
+
         TerminalSession currentSession = getCurrentSession();
         if (currentSession == null) return;
 
@@ -650,10 +732,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_REPORT_ID, Menu.NONE, R.string.action_report_issue);
     }
 
-    /** Hook system menu to show context menu instead. */
+    /** Hook system menu to show Material 3 terminal actions bottom sheet instead. */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        mTerminalView.showContextMenu();
+        showTerminalActionsBottomSheet();
         return false;
     }
 
@@ -713,7 +795,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private void showKillSessionDialog(TerminalSession session) {
         if (session == null) return;
 
-        final AlertDialog.Builder b = new AlertDialog.Builder(this);
+        final MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(this);
         b.setIcon(android.R.drawable.ic_dialog_alert);
         b.setMessage(R.string.title_confirm_kill_process);
         b.setPositiveButton(android.R.string.yes, (dialog, id) -> {
@@ -742,7 +824,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         } catch (ActivityNotFoundException | IllegalArgumentException e) {
             // The startActivity() call is not documented to throw IllegalArgumentException.
             // However, crash reporting shows that it sometimes does, so catch it here.
-            new AlertDialog.Builder(this).setMessage(getString(R.string.error_styling_not_installed))
+            new MaterialAlertDialogBuilder(this).setMessage(getString(R.string.error_styling_not_installed))
                 .setPositiveButton(R.string.action_styling_install,
                     (dialog, which) -> ActivityUtils.startActivity(this, new Intent(Intent.ACTION_VIEW, Uri.parse(TermuxConstants.TERMUX_STYLING_FDROID_PACKAGE_URL))))
                 .setNegativeButton(android.R.string.cancel, null).show();
@@ -831,6 +913,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public void setExtraKeysView(ExtraKeysView extraKeysView) {
         mExtraKeysView = extraKeysView;
+        if (mExtraKeysView != null) {
+            applyToolbarAppearance(
+                TermuxThemeManager.getActivePalette(this),
+                TermuxFontManager.getActiveTypeface(this)
+            );
+        }
     }
 
     public DrawerLayout getDrawer() {
@@ -856,7 +944,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     public void termuxSessionListNotifyUpdated() {
-        mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTermuxSessionListViewController != null) {
+            mTermuxSessionListViewController.notifyDataSetChanged();
+        }
+        if (mTermuxTopTabBarController != null) {
+            mTermuxTopTabBarController.rebuildTabs();
+        }
     }
 
     public boolean isVisible() {
@@ -973,9 +1066,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mExtraKeysView.setButtonTextAllCaps(mProperties.shouldExtraKeysTextBeAllCaps());
                 mExtraKeysView.reload(mTermuxTerminalExtraKeys.getExtraKeysInfo(), mTerminalToolbarDefaultHeight);
             }
-
-            // Update NightMode.APP_NIGHT_MODE
-            TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
         }
 
         setMargins();
@@ -983,11 +1073,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         FileReceiverActivity.updateFileReceiverActivityComponentsState(this);
 
-        if (mTermuxTerminalSessionActivityClient != null)
-            mTermuxTerminalSessionActivityClient.onReloadActivityStyling();
-
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onReloadActivityStyling();
+
+        applyCurrentAppearance();
 
         // To change the activity and drawer theme, activity needs to be recreated.
         // It will destroy the activity, including all stored variables and views, and onCreate()
@@ -995,6 +1084,133 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (recreateActivity) {
             Logger.logDebug(LOG_TAG, "Recreating activity");
             TermuxActivity.this.recreate();
+        }
+    }
+
+    private void syncAppearanceIfNeeded() {
+        long currentRevision = TermuxAppearancePreferences.getAppearanceRevision(this);
+        if (mLastAppliedAppearanceRevision != currentRevision) {
+            applyCurrentAppearance();
+        }
+    }
+
+    public long getLastAppliedAppearanceRevision() {
+        return mLastAppliedAppearanceRevision;
+    }
+
+    /**
+     * Applies the active {@link TermuxColorPalette} and Nerd Font {@link Typeface} across the terminal canvas,
+     * all active terminal sessions, cursor style, system bars, extra keys / text input toolbar, and left drawer
+     * in-place without requiring an activity restart.
+     */
+    public void applyCurrentAppearance() {
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(this);
+        Typeface typeface = TermuxFontManager.getActiveTypeface(this);
+
+        TermuxThemeManager.syncAppNightMode(palette);
+        TermuxThemeManager.applyToTerminalColorScheme(palette);
+
+        if (mTerminalView != null) {
+            int fontSize = mPreferences != null
+                ? mPreferences.getFontSize()
+                : TermuxAppSharedPreferences.getDefaultFontSizes(this)[0];
+            mTerminalView.setTextSize(fontSize);
+        }
+
+        if (mTermuxTerminalSessionActivityClient != null) {
+            mTermuxTerminalSessionActivityClient.applyAppearance(palette, typeface);
+        } else {
+            if (mTerminalView != null) {
+                mTerminalView.setTypeface(typeface);
+            }
+            if (getWindow() != null) {
+                getWindow().getDecorView().setBackgroundColor(palette.terminalBackground);
+            }
+        }
+
+        TermuxThemeManager.applyActivityChrome(this, palette, palette.terminalBackground);
+        applyToolbarAppearance(palette, typeface);
+        applyDrawerAndTopBarAppearance(palette, typeface);
+
+        mLastAppliedAppearanceRevision = TermuxAppearancePreferences.getAppearanceRevision(this);
+    }
+
+    protected void applyToolbarAppearance(@NonNull TermuxColorPalette palette, @NonNull Typeface typeface) {
+        ViewPager toolbarViewPager = getTerminalToolbarViewPager();
+        if (toolbarViewPager != null) {
+            toolbarViewPager.setBackgroundColor(palette.toolbarSurface);
+            if (toolbarViewPager.getAdapter() instanceof TermuxAppearanceAware) {
+                ((TermuxAppearanceAware) toolbarViewPager.getAdapter()).applyAppearance(palette, typeface);
+            }
+        }
+        Object extraKeysObj = mExtraKeysView;
+        if (extraKeysObj instanceof TermuxAppearanceAware) {
+            ((TermuxAppearanceAware) extraKeysObj).applyAppearance(palette, typeface);
+        } else if (mExtraKeysView != null) {
+            mExtraKeysView.setButtonColors(
+                palette.keycapText,
+                palette.keycapActiveText,
+                palette.keycapBackground,
+                palette.keycapActiveBackground
+            );
+        }
+        EditText textInput = findViewById(R.id.terminal_toolbar_text_input);
+        if (textInput != null) {
+            textInput.setBackgroundColor(palette.toolbarSurface);
+            textInput.setTextColor(palette.onSurface);
+            textInput.setHintTextColor(palette.onSurfaceVariant);
+            textInput.setTypeface(typeface);
+        }
+    }
+
+    protected void applyDrawerAndTopBarAppearance(@NonNull TermuxColorPalette palette, @NonNull Typeface typeface) {
+        View leftDrawer = findViewById(R.id.left_drawer);
+        if (leftDrawer != null) {
+            leftDrawer.setBackgroundColor(palette.surface);
+        }
+
+        TextView brandTitle = findViewById(R.id.drawer_brand_title);
+        if (brandTitle != null) {
+            brandTitle.setTextColor(palette.onSurface);
+            brandTitle.setTypeface(typeface, Typeface.BOLD);
+        }
+        TextView brandSubtitle = findViewById(R.id.drawer_brand_subtitle);
+        if (brandSubtitle != null) {
+            brandSubtitle.setTextColor(palette.onSurfaceVariant);
+            brandSubtitle.setText(palette.displayName);
+        }
+
+        int subtleDivider = ColorUtils.setAlphaComponent(palette.outline, 80);
+        View headerDivider = findViewById(R.id.drawer_header_divider);
+        if (headerDivider != null) headerDivider.setBackgroundColor(subtleDivider);
+        View footerDivider = findViewById(R.id.drawer_footer_divider);
+        if (footerDivider != null) footerDivider.setBackgroundColor(subtleDivider);
+
+        ImageButton settingsButton = findViewById(R.id.settings_button);
+        if (settingsButton != null) {
+            ImageViewCompat.setImageTintList(settingsButton, ColorStateList.valueOf(palette.onSurface));
+        }
+        ImageButton appearanceButton = findViewById(R.id.appearance_button);
+        if (appearanceButton != null) {
+            ImageViewCompat.setImageTintList(appearanceButton, ColorStateList.valueOf(palette.accent));
+        }
+
+        MaterialButton toggleKeyboardBtn = findViewById(R.id.toggle_keyboard_button);
+        if (toggleKeyboardBtn != null) {
+            toggleKeyboardBtn.setBackgroundTintList(ColorStateList.valueOf(palette.surfaceContainerHigh));
+            toggleKeyboardBtn.setTextColor(palette.onSurface);
+        }
+        MaterialButton newSessionBtn = findViewById(R.id.new_session_button);
+        if (newSessionBtn != null) {
+            newSessionBtn.setBackgroundTintList(ColorStateList.valueOf(palette.accent));
+            newSessionBtn.setTextColor(palette.onAccent);
+        }
+
+        if (mTermuxSessionListViewController != null) {
+            mTermuxSessionListViewController.applyAppearance(palette, typeface);
+        }
+        if (mTermuxTopTabBarController != null) {
+            mTermuxTopTabBarController.applyAppearance(palette, typeface);
         }
     }
 

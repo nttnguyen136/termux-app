@@ -1,0 +1,859 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+
+abstract class PrepareShellBundleAssetsTask extends DefaultTask {
+
+    private static final String USER_AGENT = "termux-app-gradle/1.0"
+    private static final String APT_BASE_URL = "https://packages-cf.termux.dev/apt/termux-main"
+    private static final String APT_PACKAGES_URL_AARCH64 =
+        APT_BASE_URL + "/dists/stable/main/binary-aarch64/Packages"
+
+    private static final String PINNED_LIBCAP_VERSION = "2.78"
+    private static final String PINNED_LIBCAP_REL_PATH = "pool/main/libc/libcap/libcap_2.78_aarch64.deb"
+    private static final String PINNED_LIBCAP_SHA256 =
+        "50c530c845288b135dbe4690f8c19ee8ef1c6bb554be4421828eeee9c1f7f89c"
+
+    private static final String PINNED_ZSH_VERSION = "5.9.2-2"
+    private static final String PINNED_ZSH_REL_PATH = "pool/main/z/zsh/zsh_5.9.2-2_aarch64.deb"
+    private static final String PINNED_ZSH_SHA256 =
+        "3f204ec0621c231b5f0c57ec7f37648652e6c89966e8627925e5c431ea896335"
+
+    private static final String OMZ_COMMIT = "c0140703a53eb0d22be44f7bac318d0baacc927c"
+    private static final String OMZ_URL =
+        "https://github.com/ohmyzsh/ohmyzsh/archive/" + OMZ_COMMIT + ".tar.gz"
+    private static final String OMZ_SHA256 =
+        "9b0661db3e7466dd396de2a1591ff9b5981572417649254c9d656ac086b09251"
+
+    private static final String AUTOSUGGESTIONS_COMMIT = "85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5"
+    private static final String AUTOSUGGESTIONS_URL =
+        "https://github.com/zsh-users/zsh-autosuggestions/archive/" + AUTOSUGGESTIONS_COMMIT + ".tar.gz"
+    private static final String AUTOSUGGESTIONS_SHA256 =
+        "20665e469e720e674964a66854d5534b9af78cdfd438512746ecd1ade8e819ce"
+
+    private static final String SYNTAX_HIGHLIGHTING_COMMIT = "e6683f20e5c38d3e5447f45845d04ddda75d0f23"
+    private static final String SYNTAX_HIGHLIGHTING_URL =
+        "https://github.com/zsh-users/zsh-syntax-highlighting/archive/" + SYNTAX_HIGHLIGHTING_COMMIT + ".tar.gz"
+    private static final String SYNTAX_HIGHLIGHTING_SHA256 =
+        "6e8258a74e6f3cac03e1bb5ee72504bc4d819904e9aa742d62f60833168db265"
+
+    @Input
+    abstract Property<String> getPackageVariant()
+
+    @Input
+    abstract Property<String> getBundleVersion()
+
+    @InputFile
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getCustomThemeFile()
+
+    @Internal
+    abstract DirectoryProperty getDownloadCacheDir()
+
+    @Internal
+    abstract RegularFileProperty getBootstrapAarch64Zip()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @TaskAction
+    void execute() {
+        File outRoot = getOutputDir().get().getAsFile()
+        if (outRoot.exists()) {
+            deleteRecursively(outRoot)
+        }
+        File bundleRoot = new File(outRoot, "shell-bundle")
+        if (!bundleRoot.mkdirs() && !bundleRoot.isDirectory()) {
+            throw new GradleException("Failed to create shell-bundle output directory: " + bundleRoot)
+        }
+
+        String variant = getPackageVariant().get()
+        String version = getBundleVersion().get()
+
+        if (variant != "apt-android-7") {
+            File manifestFile = new File(bundleRoot, "manifest.properties")
+            String disabledManifest = [
+                "enabled=false",
+                "bundleVersion=" + version,
+                "packageVariant=" + variant
+            ].join("\n") + "\n"
+            manifestFile.setText(disabledManifest, "UTF-8")
+            return
+        }
+
+        File cacheDir = getDownloadCacheDir().get().getAsFile()
+        if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+            throw new GradleException("Failed to create download cache dir: " + cacheDir)
+        }
+
+        // 1. Resolve & fetch offline .deb packages for aarch64
+        List<Map<String, Object>> resolvedDebs = resolveAndFetchAarch64Debs(cacheDir)
+
+        File debsAarch64Dir = new File(bundleRoot, "debs/aarch64")
+        if (!debsAarch64Dir.mkdirs() && !debsAarch64Dir.isDirectory()) {
+            throw new GradleException("Failed to create aarch64 debs dir: " + debsAarch64Dir)
+        }
+
+        List<String> debFileNames = []
+        String resolvedLibcapVersion = PINNED_LIBCAP_VERSION
+        String resolvedZshVersion = PINNED_ZSH_VERSION
+        for (Map<String, Object> debInfo : resolvedDebs) {
+            String pkgName = (String) debInfo.packageName
+            String fileName = pkgName + ".deb"
+            File cachedDeb = (File) debInfo.file
+            File destDeb = new File(debsAarch64Dir, fileName)
+            Files.copy(cachedDeb.toPath(), destDeb.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            debFileNames.add(fileName)
+            if (pkgName == "libcap") {
+                resolvedLibcapVersion = (String) debInfo.version
+            } else if (pkgName == "zsh") {
+                resolvedZshVersion = (String) debInfo.version
+            }
+        }
+
+        File debManifestTxt = new File(debsAarch64Dir, "manifest.txt")
+        debManifestTxt.setText(debFileNames.join("\n") + "\n", "UTF-8")
+
+        // 2. Fetch & verify Oh My Zsh and plugin tarballs
+        File omzTarGz = fetchWithChecksum(
+            OMZ_URL,
+            new File(cacheDir, "ohmyzsh-" + OMZ_COMMIT + ".tar.gz"),
+            OMZ_SHA256,
+            false
+        )
+        File autosuggestionsTarGz = fetchWithChecksum(
+            AUTOSUGGESTIONS_URL,
+            new File(cacheDir, "zsh-autosuggestions-" + AUTOSUGGESTIONS_COMMIT + ".tar.gz"),
+            AUTOSUGGESTIONS_SHA256,
+            false
+        )
+        File syntaxHighlightingTarGz = fetchWithChecksum(
+            SYNTAX_HIGHLIGHTING_URL,
+            new File(cacheDir, "zsh-syntax-highlighting-" + SYNTAX_HIGHLIGHTING_COMMIT + ".tar.gz"),
+            SYNTAX_HIGHLIGHTING_SHA256,
+            false
+        )
+
+        // 3. Build deterministic stripped shell-bundle/omz-bundle.tar.gz
+        // Note: AGP's AssetItem.shouldBeUnGzipped() unconditionally un-gzips any source asset whose
+        // filename ends with ".gz" and strips the trailing ".gz" extension during mergeAssets!
+        // Therefore, writing the double-gzipped file "omz-bundle.tar.gz.gz" causes AGP mergeAssets
+        // to gunzip the outer layer and strip one ".gz", producing the exact 77 KB gzip-compressed
+        // "assets/shell-bundle/omz-bundle.tar.gz" inside the merged assets dir and the final APK!
+        File omzBundleTemp = new File(cacheDir, "omz-bundle-built.tar.gz")
+        buildDeterministicOmzBundle(
+            omzTarGz,
+            autosuggestionsTarGz,
+            syntaxHighlightingTarGz,
+            getCustomThemeFile().get().getAsFile(),
+            omzBundleTemp
+        )
+        File omzBundleDoubleGz = new File(bundleRoot, "omz-bundle.tar.gz.gz")
+        omzBundleDoubleGz.withOutputStream { OutputStream rawOut ->
+            GZIPOutputStream outerGzip = new GZIPOutputStream(rawOut)
+            try {
+                outerGzip.write(Files.readAllBytes(omzBundleTemp.toPath()))
+                outerGzip.finish()
+            } finally {
+                outerGzip.close()
+            }
+        }
+
+        // 4. Write shell-bundle/manifest.properties
+        File manifestFile = new File(bundleRoot, "manifest.properties")
+        String manifestContent = [
+            "enabled=true",
+            "bundleVersion=" + version,
+            "packageVariant=" + variant,
+            "omzArchive=shell-bundle/omz-bundle.tar.gz",
+            "supportedArches=aarch64",
+            "debs.aarch64=" + debFileNames.join(","),
+            "libcapVersion=" + resolvedLibcapVersion,
+            "zshVersion=" + resolvedZshVersion,
+            "omzCommit=" + OMZ_COMMIT,
+            "autosuggestionsCommit=" + AUTOSUGGESTIONS_COMMIT,
+            "syntaxHighlightingCommit=" + SYNTAX_HIGHLIGHTING_COMMIT
+        ].join("\n") + "\n"
+        manifestFile.setText(manifestContent, "UTF-8")
+    }
+
+    private List<Map<String, Object>> resolveAndFetchAarch64Debs(File cacheDir) {
+        File libcapCached = new File(cacheDir, "libcap_" + PINNED_LIBCAP_VERSION + "_aarch64.deb")
+        File zshCached = new File(cacheDir, "zsh_" + PINNED_ZSH_VERSION + "_aarch64.deb")
+
+        File libcapFile = fetchWithChecksum(
+            APT_BASE_URL + "/" + PINNED_LIBCAP_REL_PATH,
+            libcapCached,
+            PINNED_LIBCAP_SHA256,
+            true
+        )
+        File zshFile = null
+        if (libcapFile != null) {
+            zshFile = fetchWithChecksum(
+                APT_BASE_URL + "/" + PINNED_ZSH_REL_PATH,
+                zshCached,
+                PINNED_ZSH_SHA256,
+                true
+            )
+        }
+
+        if (libcapFile != null && zshFile != null) {
+            return [
+                [packageName: "libcap", version: PINNED_LIBCAP_VERSION, file: libcapFile],
+                [packageName: "zsh", version: PINNED_ZSH_VERSION, file: zshFile]
+            ]
+        }
+
+        // Dynamic fallback from Termux APT Packages index if pinned pool URL returned 404
+        logger.lifecycle("Pinned Termux .deb URL returned 404; resolving dynamically from APT Packages index...")
+        String packagesIndexText = downloadTextWithRedirects(APT_PACKAGES_URL_AARCH64)
+        Map<String, Map<String, String>> packagesMap = parseAptPackagesIndex(packagesIndexText)
+
+        Set<String> bootstrapInstalled = readBootstrapInstalledPackages()
+        List<String> installOrder = resolveMissingTransitiveDeps("zsh", packagesMap, bootstrapInstalled)
+
+        List<Map<String, Object>> resolved = []
+        for (String pkgName : installOrder) {
+            Map<String, String> stanza = packagesMap.get(pkgName)
+            if (stanza == null) {
+                throw new GradleException("Package '" + pkgName + "' not found in Termux APT Packages index")
+            }
+            String relFilename = stanza.get("Filename")
+            String sha256 = stanza.get("SHA256")
+            String pkgVer = stanza.get("Version") ?: "unknown"
+            if (!relFilename || !sha256) {
+                throw new GradleException("Incomplete APT stanza for package '" + pkgName + "'")
+            }
+            File targetCacheFile = new File(cacheDir, pkgName + "_" + pkgVer.replaceAll("[^A-Za-z0-9._+-]", "_") + "_aarch64.deb")
+            File downloaded = fetchWithChecksum(APT_BASE_URL + "/" + relFilename, targetCacheFile, sha256, false)
+            resolved.add([packageName: pkgName, version: pkgVer, file: downloaded])
+        }
+        return resolved
+    }
+
+    private Set<String> readBootstrapInstalledPackages() {
+        Set<String> installed = new LinkedHashSet<>()
+        if (getBootstrapAarch64Zip().isPresent()) {
+            File zipFile = getBootstrapAarch64Zip().get().getAsFile()
+            if (zipFile.isFile()) {
+                ZipFile zf = new ZipFile(zipFile)
+                try {
+                    ZipEntry statusEntry = zf.getEntry("var/lib/dpkg/status")
+                    if (statusEntry != null) {
+                        String statusText = zf.getInputStream(statusEntry).getText("UTF-8")
+                        String currentPkg = null
+                        boolean isInstalled = false
+                        for (String line : statusText.split("\n")) {
+                            String trimmed = line.trim()
+                            if (trimmed.isEmpty()) {
+                                if (currentPkg != null && isInstalled) {
+                                    installed.add(currentPkg)
+                                }
+                                currentPkg = null
+                                isInstalled = false
+                            } else if (line.startsWith("Package:")) {
+                                currentPkg = line.substring("Package:".length()).trim()
+                            } else if (line.startsWith("Status:")) {
+                                isInstalled = line.contains("install ok installed")
+                            }
+                        }
+                        if (currentPkg != null && isInstalled) {
+                            installed.add(currentPkg)
+                        }
+                    }
+                } finally {
+                    zf.close()
+                }
+            }
+        }
+        if (installed.isEmpty()) {
+            // Known baseline dependencies present in bootstrap-aarch64.zip
+            installed.addAll(["attr", "libandroid-support", "ncurses", "termux-tools", "pcre2", "command-not-found"])
+        }
+        return installed
+    }
+
+    private static Map<String, Map<String, String>> parseAptPackagesIndex(String text) {
+        Map<String, Map<String, String>> result = new LinkedHashMap<>()
+        Map<String, String> current = new LinkedHashMap<>()
+        for (String rawLine : text.split("\n")) {
+            String line = rawLine.endsWith("\r") ? rawLine.substring(0, rawLine.length() - 1) : rawLine
+            if (line.trim().isEmpty()) {
+                String pkg = current.get("Package")
+                if (pkg != null) {
+                    result.put(pkg, current)
+                }
+                current = new LinkedHashMap<>()
+            } else if (!line.startsWith(" ") && !line.startsWith("\t")) {
+                int colon = line.indexOf(':')
+                if (colon > 0) {
+                    String key = line.substring(0, colon).trim()
+                    String val = line.substring(colon + 1).trim()
+                    current.put(key, val)
+                }
+            }
+        }
+        String lastPkg = current.get("Package")
+        if (lastPkg != null) {
+            result.put(lastPkg, current)
+        }
+        return result
+    }
+
+    private static List<String> resolveMissingTransitiveDeps(
+            String rootPkg,
+            Map<String, Map<String, String>> packagesMap,
+            Set<String> bootstrapInstalled) {
+        List<String> order = []
+        Set<String> visiting = new LinkedHashSet<>()
+        Set<String> visited = new LinkedHashSet<>()
+
+        Closure visit
+        visit = { String pkg ->
+            if (visited.contains(pkg) || bootstrapInstalled.contains(pkg)) {
+                return
+            }
+            if (visiting.contains(pkg)) {
+                return
+            }
+            visiting.add(pkg)
+            Map<String, String> stanza = packagesMap.get(pkg)
+            if (stanza != null) {
+                for (String depField : ["Pre-Depends", "Depends"]) {
+                    String rawDeps = stanza.get(depField)
+                    if (rawDeps) {
+                        for (String group : rawDeps.split(",")) {
+                            String firstAlt = group.split("\\|")[0].trim()
+                            String depName = firstAlt.replaceAll("\\s*\\(.*\\)\$", "").trim()
+                            if (!depName.isEmpty()) {
+                                visit(depName)
+                            }
+                        }
+                    }
+                }
+            }
+            visiting.remove(pkg)
+            visited.add(pkg)
+            order.add(pkg)
+        }
+        visit(rootPkg)
+        return order
+    }
+
+    private static File fetchWithChecksum(
+            String url,
+            File targetFile,
+            String expectedSha256,
+            boolean returnNullOn404) {
+        if (targetFile.isFile() && computeSha256(targetFile).equalsIgnoreCase(expectedSha256)) {
+            return targetFile
+        }
+        File parent = targetFile.getParentFile()
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs()
+        }
+        File tempFile = new File(targetFile.getAbsolutePath() + ".part")
+        boolean downloaded = downloadFileWithRedirects(url, tempFile, returnNullOn404)
+        if (!downloaded) {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+            return null
+        }
+        String actualSha256 = computeSha256(tempFile)
+        if (!actualSha256.equalsIgnoreCase(expectedSha256)) {
+            tempFile.delete()
+            throw new GradleException(
+                "SHA-256 mismatch for " + url + ": expected " + expectedSha256 + ", got " + actualSha256
+            )
+        }
+        Files.move(tempFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        return targetFile
+    }
+
+    private static boolean downloadFileWithRedirects(String urlString, File destFile, boolean returnFalseOn404) {
+        String currentUrl = urlString
+        for (int redirects = 0; redirects < 10; redirects++) {
+            HttpURLConnection conn = (HttpURLConnection) new URL(currentUrl).openConnection()
+            conn.setInstanceFollowRedirects(false)
+            conn.setConnectTimeout(30_000)
+            conn.setReadTimeout(60_000)
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            int status = conn.getResponseCode()
+            if (status == HttpURLConnection.HTTP_MOVED_PERM ||
+                status == HttpURLConnection.HTTP_MOVED_TEMP ||
+                status == HttpURLConnection.HTTP_SEE_OTHER ||
+                status == 307 || status == 308) {
+                String location = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (!location) {
+                    throw new GradleException("Redirect without Location header from " + currentUrl)
+                }
+                currentUrl = new URL(new URL(currentUrl), location).toString()
+                continue
+            }
+            if (status == HttpURLConnection.HTTP_NOT_FOUND && returnFalseOn404) {
+                conn.disconnect()
+                return false
+            }
+            if (status != HttpURLConnection.HTTP_OK) {
+                conn.disconnect()
+                throw new GradleException("HTTP " + status + " while downloading " + currentUrl)
+            }
+            conn.getInputStream().withCloseable { InputStream input ->
+                destFile.withOutputStream { OutputStream out ->
+                    byte[] buffer = new byte[16384]
+                    int read
+                    while ((read = input.read(buffer)) != -1) {
+                        out.write(buffer, 0, read)
+                    }
+                }
+            }
+            conn.disconnect()
+            return true
+        }
+        throw new GradleException("Too many redirects while downloading " + urlString)
+    }
+
+    private static String downloadTextWithRedirects(String urlString) {
+        File temp = File.createTempFile("termux-apt-packages-", ".txt")
+        try {
+            downloadFileWithRedirects(urlString, temp, false)
+            return temp.getText("UTF-8")
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private static String computeSha256(File file) {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256")
+        file.withInputStream { InputStream input ->
+            byte[] buffer = new byte[16384]
+            int read
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        byte[] hash = digest.digest()
+        StringBuilder sb = new StringBuilder(hash.length * 2)
+        for (byte b : hash) {
+            sb.append(String.format("%02x", b & 0xff))
+        }
+        return sb.toString()
+    }
+
+    private static void buildDeterministicOmzBundle(
+            File omzTarGz,
+            File autosuggestionsTarGz,
+            File syntaxHighlightingTarGz,
+            File customThemeFile,
+            File outputTarGz) {
+        if (!customThemeFile.isFile()) {
+            throw new GradleException("Missing custom theme file: " + customThemeFile)
+        }
+
+        // Map of archive relative path -> [bytes: byte[], mode: int]
+        TreeMap<String, Map<String, Object>> filesMap = new TreeMap<>()
+        TreeSet<String> dirsSet = new TreeSet<>([
+            "cache/",
+            "cache/completions/",
+            "custom/",
+            "custom/plugins/",
+            "custom/plugins/zsh-autosuggestions/",
+            "custom/plugins/zsh-syntax-highlighting/",
+            "custom/themes/",
+            "lib/",
+            "plugins/",
+            "themes/",
+            "tools/"
+        ])
+
+        // 1. Read whitelisted files from ohmyzsh tarball
+        readTarGzEntries(omzTarGz) { String relPath, byte[] content, int mode ->
+            boolean keep = (relPath == "oh-my-zsh.sh" ||
+                            relPath == "LICENSE.txt" ||
+                            relPath == "tools/check_for_upgrade.sh" ||
+                            (relPath.startsWith("lib/") && relPath.endsWith(".zsh") && !relPath.substring(4).contains("/")))
+            if (keep) {
+                int effectiveMode = (relPath == "oh-my-zsh.sh" || relPath == "tools/check_for_upgrade.sh") ? 0755 : 0644
+                filesMap.put(relPath, [bytes: content, mode: effectiveMode])
+                addParentDirs(dirsSet, relPath)
+            }
+        }
+
+        // 2. Read whitelisted files from zsh-autosuggestions tarball
+        Set<String> autosuggestKeep = ["zsh-autosuggestions.zsh", "zsh-autosuggestions.plugin.zsh", "LICENSE"] as Set
+        readTarGzEntries(autosuggestionsTarGz) { String relPath, byte[] content, int mode ->
+            if (autosuggestKeep.contains(relPath)) {
+                String destPath = "custom/plugins/zsh-autosuggestions/" + relPath
+                filesMap.put(destPath, [bytes: content, mode: 0644])
+                addParentDirs(dirsSet, destPath)
+            }
+        }
+
+        // 3. Read whitelisted files from zsh-syntax-highlighting tarball
+        Set<String> syntaxRootKeep = [
+            "zsh-syntax-highlighting.zsh",
+            "zsh-syntax-highlighting.plugin.zsh",
+            ".version",
+            ".revision-hash",
+            "COPYING.md"
+        ] as Set
+        readTarGzEntries(syntaxHighlightingTarGz) { String relPath, byte[] content, int mode ->
+            boolean isHighlighter = false
+            if (relPath.startsWith("highlighters/") && relPath.endsWith("-highlighter.zsh")) {
+                String[] parts = relPath.split("/")
+                isHighlighter = (parts.length == 3)
+            }
+            if (syntaxRootKeep.contains(relPath) || isHighlighter) {
+                String destPath = "custom/plugins/zsh-syntax-highlighting/" + relPath
+                filesMap.put(destPath, [bytes: content, mode: 0644])
+                addParentDirs(dirsSet, destPath)
+            }
+        }
+
+        // 4. Add custom minimal Nerd Font theme
+        byte[] themeBytes = Files.readAllBytes(customThemeFile.toPath())
+        String themeDestPath = "custom/themes/termux-lean.zsh-theme"
+        filesMap.put(themeDestPath, [bytes: themeBytes, mode: 0644])
+        addParentDirs(dirsSet, themeDestPath)
+
+        // Verify critical files were packaged
+        List<String> requiredFiles = [
+            "oh-my-zsh.sh",
+            "tools/check_for_upgrade.sh",
+            "lib/git.zsh",
+            "custom/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh",
+            "custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.plugin.zsh",
+            "custom/plugins/zsh-syntax-highlighting/.version",
+            "custom/plugins/zsh-syntax-highlighting/.revision-hash",
+            "custom/plugins/zsh-syntax-highlighting/highlighters/main/main-highlighter.zsh",
+            "custom/themes/termux-lean.zsh-theme"
+        ]
+        for (String req : requiredFiles) {
+            if (!filesMap.containsKey(req)) {
+                throw new GradleException("Missing required file in omz-bundle.tar.gz: " + req)
+            }
+        }
+
+        // Write deterministic USTAR tar.gz
+        outputTarGz.withOutputStream { OutputStream rawOut ->
+            GZIPOutputStream gzipOut = new GZIPOutputStream(rawOut)
+            try {
+                for (String dirPath : dirsSet) {
+                    String normalizedDir = dirPath.endsWith("/") ? dirPath : (dirPath + "/")
+                    writeUstarEntry(gzipOut, normalizedDir, new byte[0], 0755, (byte) '5')
+                }
+                for (Map.Entry<String, Map<String, Object>> entry : filesMap.entrySet()) {
+                    String path = entry.getKey()
+                    byte[] data = (byte[]) entry.getValue().get("bytes")
+                    int mode = (int) entry.getValue().get("mode")
+                    writeUstarEntry(gzipOut, path, data, mode, (byte) '0')
+                }
+                // Two 512-byte zero blocks for end-of-archive
+                gzipOut.write(new byte[1024])
+                gzipOut.finish()
+            } finally {
+                gzipOut.close()
+            }
+        }
+    }
+
+    private static void addParentDirs(Set<String> dirsSet, String filePath) {
+        int slash = filePath.indexOf('/')
+        while (slash > 0) {
+            dirsSet.add(filePath.substring(0, slash + 1))
+            slash = filePath.indexOf('/', slash + 1)
+        }
+    }
+
+    private static void readTarGzEntries(File tarGzFile, Closure onRegularFile) {
+        tarGzFile.withInputStream { InputStream fileIn ->
+            GZIPInputStream gzipIn = new GZIPInputStream(new BufferedInputStream(fileIn))
+            try {
+                byte[] header = new byte[512]
+                String pendingLongName = null
+                String pendingPaxPath = null
+
+                while (readFully(gzipIn, header) == 512) {
+                    if (isAllZero(header)) {
+                        break
+                    }
+                    byte typeFlag = header[156]
+                    long size = parseTarNumber(header, 124, 12)
+                    int mode = (int) parseTarNumber(header, 100, 8)
+                    String name = parseTarString(header, 0, 100)
+                    String magic = parseTarString(header, 257, 6)
+                    if (magic.startsWith("ustar")) {
+                        String prefix = parseTarString(header, 345, 155)
+                        if (!prefix.isEmpty()) {
+                            name = prefix + "/" + name
+                        }
+                    }
+
+                    byte[] payload = readPayloadAndSkipPadding(gzipIn, size)
+
+                    if (typeFlag == (byte) 'L') {
+                        int len = payload.length
+                        while (len > 0 && payload[len - 1] == (byte) 0) {
+                            len--
+                        }
+                        pendingLongName = new String(payload, 0, len, StandardCharsets.UTF_8)
+                        continue
+                    } else if (typeFlag == (byte) 'x') {
+                        String paxPath = parsePaxPath(payload)
+                        if (paxPath != null) {
+                            pendingPaxPath = paxPath
+                        }
+                        continue
+                    } else if (typeFlag == (byte) 'g') {
+                        continue
+                    }
+
+                    String effectiveName = pendingPaxPath != null ? pendingPaxPath :
+                        (pendingLongName != null ? pendingLongName : name)
+                    pendingLongName = null
+                    pendingPaxPath = null
+
+                    if (typeFlag == (byte) '0' || typeFlag == (byte) 0) {
+                        int firstSlash = effectiveName.indexOf('/')
+                        if (firstSlash > 0 && firstSlash < effectiveName.length() - 1) {
+                            String stripped = effectiveName.substring(firstSlash + 1)
+                            onRegularFile.call(stripped, payload, mode)
+                        }
+                    }
+                }
+            } finally {
+                gzipIn.close()
+            }
+        }
+    }
+
+    private static int readFully(InputStream input, byte[] buf) {
+        int total = 0
+        while (total < buf.length) {
+            int r = input.read(buf, total, buf.length - total)
+            if (r == -1) {
+                break
+            }
+            total += r
+        }
+        return total
+    }
+
+    private static byte[] readPayloadAndSkipPadding(InputStream input, long size) {
+        if (size < 0 || size > Integer.MAX_VALUE) {
+            throw new GradleException("Invalid tar entry size: " + size)
+        }
+        byte[] data = new byte[(int) size]
+        int read = readFully(input, data)
+        if (read != (int) size) {
+            throw new GradleException("Unexpected EOF in tar entry payload")
+        }
+        int padding = (int) ((512L - (size % 512L)) % 512L)
+        if (padding > 0) {
+            byte[] padBuf = new byte[padding]
+            if (readFully(input, padBuf) != padding) {
+                throw new GradleException("Unexpected EOF in tar padding")
+            }
+        }
+        return data
+    }
+
+    private static boolean isAllZero(byte[] block) {
+        for (byte b : block) {
+            if (b != 0) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static String parseTarString(byte[] buf, int offset, int maxLen) {
+        int end = offset
+        int limit = offset + maxLen
+        while (end < limit && buf[end] != 0) {
+            end++
+        }
+        return new String(buf, offset, end - offset, StandardCharsets.UTF_8)
+    }
+
+    private static long parseTarNumber(byte[] buf, int offset, int length) {
+        if ((buf[offset] & 0x80) != 0) {
+            long val = buf[offset] & 0x7f
+            for (int i = 1; i < length; i++) {
+                val = (val << 8) | (buf[offset + i] & 0xff)
+            }
+            return val
+        }
+        String s = parseTarString(buf, offset, length).trim()
+        if (s.isEmpty()) {
+            return 0L
+        }
+        return Long.parseLong(s, 8)
+    }
+
+    private static String parsePaxPath(byte[] payload) {
+        String text = new String(payload, StandardCharsets.UTF_8)
+        int idx = 0
+        while (idx < text.length()) {
+            int spaceIdx = text.indexOf(' ', idx)
+            if (spaceIdx < 0) {
+                break
+            }
+            int recLen
+            try {
+                recLen = Integer.parseInt(text.substring(idx, spaceIdx))
+            } catch (NumberFormatException ignored) {
+                break
+            }
+            if (recLen <= 0 || idx + recLen > text.length()) {
+                break
+            }
+            String record = text.substring(spaceIdx + 1, idx + recLen)
+            if (record.endsWith("\n")) {
+                record = record.substring(0, record.length() - 1)
+            }
+            if (record.startsWith("path=")) {
+                return record.substring("path=".length())
+            }
+            idx += recLen
+        }
+        return null
+    }
+
+    private static void writeUstarEntry(OutputStream out, String entryPath, byte[] data, int mode, byte typeFlag) {
+        byte[] header = new byte[512]
+        byte[] nameBytes = entryPath.getBytes(StandardCharsets.UTF_8)
+        if (nameBytes.length <= 100) {
+            System.arraycopy(nameBytes, 0, header, 0, nameBytes.length)
+        } else {
+            int splitSlash = entryPath.lastIndexOf('/')
+            if (splitSlash <= 0) {
+                throw new GradleException("Tar entry path too long for USTAR: " + entryPath)
+            }
+            byte[] prefixBytes = entryPath.substring(0, splitSlash).getBytes(StandardCharsets.UTF_8)
+            byte[] shortNameBytes = entryPath.substring(splitSlash + 1).getBytes(StandardCharsets.UTF_8)
+            if (prefixBytes.length > 155 || shortNameBytes.length > 100) {
+                throw new GradleException("Tar entry path exceeds USTAR prefix+name limits: " + entryPath)
+            }
+            System.arraycopy(shortNameBytes, 0, header, 0, shortNameBytes.length)
+            System.arraycopy(prefixBytes, 0, header, 345, prefixBytes.length)
+        }
+
+        writeOctal(header, 100, 8, mode)
+        writeOctal(header, 108, 8, 0) // uid = 0
+        writeOctal(header, 116, 8, 0) // gid = 0
+        writeOctal(header, 124, 12, data.length)
+        writeOctal(header, 136, 12, 0) // mtime = 0 (deterministic)
+
+        // Checksum placeholder: 8 spaces
+        for (int i = 148; i < 156; i++) {
+            header[i] = (byte) ' '
+        }
+        header[156] = typeFlag
+
+        // USTAR magic "ustar\0" + version "00"
+        byte[] magic = "ustar".getBytes(StandardCharsets.US_ASCII)
+        System.arraycopy(magic, 0, header, 257, magic.length)
+        header[262] = 0
+        header[263] = (byte) '0'
+        header[264] = (byte) '0'
+
+        long sum = 0
+        for (int i = 0; i < 512; i++) {
+            sum += (header[i] & 0xff)
+        }
+        writeChecksumOctal(header, 148, sum)
+
+        out.write(header)
+        if (data.length > 0) {
+            out.write(data)
+            int padding = (512 - (data.length % 512)) % 512
+            if (padding > 0) {
+                out.write(new byte[padding])
+            }
+        }
+    }
+
+    private static void writeOctal(byte[] buf, int offset, int length, long value) {
+        String oct = Long.toOctalString(value)
+        int numDigits = length - 1
+        while (oct.length() < numDigits) {
+            oct = "0" + oct
+        }
+        byte[] bytes = oct.getBytes(StandardCharsets.US_ASCII)
+        System.arraycopy(bytes, 0, buf, offset, Math.min(bytes.length, numDigits))
+        buf[offset + length - 1] = 0
+    }
+
+    private static void writeChecksumOctal(byte[] buf, int offset, long value) {
+        String oct = Long.toOctalString(value)
+        while (oct.length() < 6) {
+            oct = "0" + oct
+        }
+        byte[] bytes = oct.getBytes(StandardCharsets.US_ASCII)
+        System.arraycopy(bytes, 0, buf, offset, 6)
+        buf[offset + 6] = 0
+        buf[offset + 7] = (byte) ' '
+    }
+
+    private static void deleteRecursively(File f) {
+        if (f.isDirectory()) {
+            File[] children = f.listFiles()
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child)
+                }
+            }
+        }
+        f.delete()
+    }
+}
+
+def prepareShellBundleAssets = tasks.register("prepareShellBundleAssets", PrepareShellBundleAssetsTask) {
+    group = "termux"
+    description = "Downloads and packages offline Zsh + Oh My Zsh bundle assets for apt-android-7."
+    packageVariant.set(project.ext.packageVariant)
+    bundleVersion.set("1")
+    customThemeFile.set(layout.projectDirectory.file("src/main/shell-bundle/termux-lean.zsh-theme"))
+    bootstrapAarch64Zip.set(layout.projectDirectory.file("src/main/cpp/bootstrap-aarch64.zip"))
+    def cacheOverride = System.getenv("TERMUX_SHELL_BUNDLE_CACHE_DIR")
+    if (cacheOverride) {
+        downloadCacheDir.set(file(cacheOverride))
+    } else {
+        downloadCacheDir.set(new File(gradle.gradleUserHomeDir, "caches/termux-shell-bundle"))
+    }
+    outputDir.set(layout.buildDirectory.dir("generated/shell-bundle-assets"))
+}
+
+android.androidResources.noCompress += ["deb", "gz", "tgz"]
+// Override default AAPT ignoreAssetsPattern ("!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~")
+// which strips any asset ending in ".gz" (or decompresses .tar.gz -> .tar in mergeAssets)!
+android.aaptOptions.ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"
+
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    variant.sources.assets.addGeneratedSourceDirectory(
+        prepareShellBundleAssets,
+        { PrepareShellBundleAssetsTask task -> task.outputDir } as kotlin.jvm.functions.Function1
+    )
+}
+

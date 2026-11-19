@@ -12,16 +12,94 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginHorizontal="3dp"
+        android:layout_marginHorizontal="0dp"
         android:layout_marginVertical="0dp"
         android:orientation="vertical">
+
+        <!-- Optional Compact Top Tab Bar (hidden by default for fullscreen terminal) -->
+        <LinearLayout
+            android:id="@+id/terminal_top_tab_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:background="?attr/colorSurfaceContainer">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="4dp">
+
+                <ImageButton
+                    android:id="@+id/top_bar_drawer_button"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/action_open_drawer"
+                    android:padding="6dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_menu"
+                    app:tint="?attr/termuxActivityDrawerImageTint" />
+
+                <HorizontalScrollView
+                    android:id="@+id/top_bar_tabs_scroll"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:clipToPadding="false"
+                    android:fadingEdgeLength="16dp"
+                    android:fillViewport="false"
+                    android:requiresFadingEdge="horizontal"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/top_bar_tabs_container"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="4dp" />
+                </HorizontalScrollView>
+
+                <ImageButton
+                    android:id="@+id/top_bar_new_session_button"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/action_new_session"
+                    android:padding="6dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_add"
+                    app:tint="?attr/termuxActivityDrawerImageTint" />
+
+                <ImageButton
+                    android:id="@+id/top_bar_settings_button"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/action_open_settings"
+                    android:padding="6dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_settings"
+                    app:tint="?attr/termuxActivityDrawerImageTint" />
+            </LinearLayout>
+
+            <View
+                android:id="@+id/top_bar_divider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOutline" />
+        </LinearLayout>
 
         <androidx.drawerlayout.widget.DrawerLayout
             android:id="@+id/drawer_layout"
             android:layout_width="match_parent"
-            android:layout_alignParentTop="true"
-            android:layout_above="@+id/terminal_toolbar_view_pager"
-            android:layout_height="match_parent">
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminal_top_tab_bar"
+            android:layout_above="@+id/terminal_toolbar_view_pager">
 
             <com.termux.view.TerminalView
                 android:id="@+id/terminal_view"
@@ -33,31 +111,83 @@
                 android:scrollbars="vertical"
                 tools:ignore="UnusedAttribute" />
 
+            <!-- Modern Material 3 Left Navigation Drawer -->
             <LinearLayout
                 android:id="@+id/left_drawer"
-                android:layout_width="240dp"
+                android:layout_width="280dp"
                 android:layout_height="match_parent"
                 android:layout_gravity="start"
                 android:choiceMode="singleChoice"
                 android:divider="@android:color/transparent"
                 android:dividerHeight="0dp"
-                android:descendantFocusability="blocksDescendants"
+                android:descendantFocusability="afterDescendants"
                 android:orientation="vertical"
                 android:background="?attr/termuxActivityDrawerBackground">
 
+                <!-- Branded Drawer Header -->
                 <LinearLayout
+                    android:id="@+id/drawer_header"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="12dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/drawer_brand_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/application_name"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.01" />
+
+                        <TextView
+                            android:id="@+id/drawer_brand_subtitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/drawer_sessions_label"
+                            android:textSize="12sp"
+                            android:layout_marginTop="1dp" />
+                    </LinearLayout>
+
+                    <ImageButton
+                        android:id="@+id/appearance_button"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/action_open_appearance"
+                        android:padding="8dp"
+                        android:scaleType="centerInside"
+                        android:src="@drawable/ic_palette"
+                        app:tint="?attr/termuxActivityDrawerImageTint" />
+
                     <ImageButton
                         android:id="@+id/settings_button"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@drawable/ic_settings"
-                        android:background="@null"
+                        android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/action_open_settings"
+                        android:padding="8dp"
+                        android:scaleType="centerInside"
+                        android:src="@drawable/ic_settings"
                         app:tint="?attr/termuxActivityDrawerImageTint" />
                 </LinearLayout>
+
+                <View
+                    android:id="@+id/drawer_header_divider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="?attr/colorOutline" />
 
                 <ListView
                     android:id="@+id/terminal_sessions_list"
@@ -66,29 +196,53 @@
                     android:layout_gravity="top"
                     android:layout_weight="1"
                     android:choiceMode="singleChoice"
-                    android:longClickable="true" />
+                    android:clipToPadding="false"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="4dp"
+                    android:longClickable="true"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="8dp" />
 
+                <View
+                    android:id="@+id/drawer_footer_divider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="?attr/colorOutline" />
+
+                <!-- Material 3 Bottom Action Bar -->
                 <LinearLayout
-                    style="?android:attr/buttonBarStyle"
+                    android:id="@+id/drawer_footer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="10dp">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toggle_keyboard_button"
-                        style="?android:attr/buttonBarButtonStyle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="42dp"
                         android:layout_weight="1"
-                        android:text="@string/action_toggle_soft_keyboard" />
+                        android:layout_marginEnd="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/action_toggle_soft_keyboard"
+                        android:textSize="13sp"
+                        app:cornerRadius="10dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/new_session_button"
-                        style="?android:attr/buttonBarButtonStyle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="0dp"
+                        android:layout_height="42dp"
                         android:layout_weight="1"
-                        android:text="@string/action_new_session" />
+                        android:layout_marginStart="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/action_new_session"
+                        android:textSize="13sp"
+                        app:cornerRadius="10dp" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -98,8 +252,8 @@
             android:id="@+id/terminal_toolbar_view_pager"
             android:visibility="gone"
             android:layout_width="match_parent"
-            android:layout_height="37.5dp"
-            android:background="@color/black"
+            android:layout_height="40dp"
+            android:background="?attr/colorSurfaceContainer"
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>

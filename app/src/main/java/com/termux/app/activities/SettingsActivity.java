@@ -1,11 +1,13 @@
 package com.termux.app.activities;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 
@@ -24,26 +26,51 @@ import com.termux.shared.android.AndroidUtils;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.activity.media.AppCompatActivityUtils;
+import com.termux.app.fragments.settings.AppearanceStudioFragment;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.theme.NightMode;
 
 public class SettingsActivity extends AppCompatActivity {
 
+    public static final String EXTRA_INITIAL_FRAGMENT = "com.termux.app.settings.EXTRA_INITIAL_FRAGMENT";
+    public static final String FRAGMENT_APPEARANCE_STUDIO = "appearance_studio";
+
+    @NonNull
+    public static Intent createAppearanceStudioIntent(@NonNull Context context) {
+        Intent intent = new Intent(context, SettingsActivity.class);
+        intent.putExtra(EXTRA_INITIAL_FRAGMENT, FRAGMENT_APPEARANCE_STUDIO);
+        return intent;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(this);
+        TermuxThemeManager.syncAppNightMode(palette);
         AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
+
+        super.onCreate(savedInstanceState);
 
         setContentView(R.layout.activity_settings);
         if (savedInstanceState == null) {
             getSupportFragmentManager()
                 .beginTransaction()
-                .replace(R.id.settings, new RootPreferencesFragment())
+                .replace(R.id.settings, createInitialFragment())
                 .commit();
         }
 
         AppCompatActivityUtils.setToolbar(this, com.termux.shared.R.id.toolbar);
         AppCompatActivityUtils.setShowBackButtonInActionBar(this, true);
+        TermuxThemeManager.applyActivityChrome(this, palette);
+    }
+
+    @NonNull
+    protected Fragment createInitialFragment() {
+        Intent intent = getIntent();
+        if (intent != null && FRAGMENT_APPEARANCE_STUDIO.equals(intent.getStringExtra(EXTRA_INITIAL_FRAGMENT))) {
+            return new AppearanceStudioFragment();
+        }
+        return new RootPreferencesFragment();
     }
 
     @Override

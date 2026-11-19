@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Appearance, Theme & Nerd Font display labels -->
+    <string name="appearance_theme_catppuccin_mocha">Catppuccin Mocha</string>
+    <string name="appearance_theme_tokyo_night">Tokyo Night</string>
+    <string name="appearance_theme_dracula">Dracula</string>
+    <string name="appearance_theme_nord">Nord</string>
+    <string name="appearance_theme_gruvbox_dark">Gruvbox Dark</string>
+    <string name="appearance_theme_oled_pitch_black">OLED Pitch Black</string>
+    <string name="appearance_theme_catppuccin_latte">Catppuccin Latte</string>
+    <string name="appearance_theme_custom">Custom</string>
+
+    <string name="appearance_font_jetbrains_mono">JetBrainsMono Nerd Font Mono</string>
+    <string name="appearance_font_meslo_lgs">MesloLGS Nerd Font Mono</string>
+    <string name="appearance_font_fira_code">FiraCode Nerd Font Mono</string>
+    <string name="appearance_font_custom">Custom (~/.termux/font.ttf)</string>
+
+    <string name="terminal_toolbar_text_input_hint">Type command\u2026</string>
+
+    <!-- Left Drawer & Optional Top Tab Bar -->
+    <string name="action_open_appearance">Appearance &amp; Shell</string>
+    <string name="action_open_drawer">Open sessions drawer</string>
+    <string name="action_close_session">Close session</string>
+    <string name="drawer_sessions_label">Sessions</string>
+    <string name="session_status_running">Running</string>
+    <string name="session_status_exited">Exited</string>
+    <string name="session_status_exited_error">Exited (%1$d)</string>
+
+    <!-- Material 3 Terminal Actions Bottom Sheet & Bootstrap Dialog -->
+    <string name="terminal_actions_sheet_title">Terminal Actions</string>
+    <string name="action_paste_clipboard">Paste</string>
+    <string name="action_toggle_extra_keys">Toggle Extra Keys</string>
+    <string name="status_on">ON</string>
+    <string name="status_off">OFF</string>
+    <string name="bootstrap_dialog_title">Setting up Termux</string>
+
+    <!-- Appearance & Shell Studio -->
+    <string name="appearance_studio_summary">Themes, Nerd Fonts, cursor, layout &amp; Oh My Zsh</string>
+    <string name="appearance_section_preview">Live Terminal Preview</string>
+    <string name="appearance_section_themes">Color Theme</string>
+    <string name="appearance_section_fonts">Nerd Font</string>
+    <string name="appearance_section_typography">Typography &amp; Cursor</string>
+    <string name="appearance_font_size_label">Font Size</string>
+    <string name="appearance_cursor_style_label">Cursor Style</string>
+    <string name="appearance_cursor_block">Block</string>
+    <string name="appearance_cursor_underline">Underline</string>
+    <string name="appearance_cursor_bar">Bar</string>
+    <string name="appearance_section_interface">Interface</string>
+    <string name="appearance_top_tab_bar_title">Compact Top Tab Bar</string>
+    <string name="appearance_top_tab_bar_summary">Show quick session switcher pills at top of terminal</string>
+    <string name="appearance_welcome_banner_title">Compact Welcome Banner</string>
+    <string name="appearance_welcome_banner_summary">Show 2-line Nerd Font banner instead of verbose MOTD</string>
+    <string name="appearance_section_shell">Shell &amp; Oh My Zsh</string>
+    <string name="appearance_shell_apply_defaults">Apply Defaults</string>
+    <string name="appearance_shell_reset_defaults">Reset Shell</string>
+    <string name="appearance_shell_apply_toast">Shell defaults applied</string>
+    <string name="appearance_shell_reset_title">Reset Shell Configuration?</string>
+    <string name="appearance_shell_reset_message">This will overwrite ~/.zshrc and ~/.bashrc with Termux Modern Shell defaults and restore Oh My Zsh plugins and theme.</string>
+    <string name="appearance_shell_reset_confirm">Reset</string>
+    <string name="appearance_shell_reset_toast">Shell configuration reset to defaults</string>
+</resources>
