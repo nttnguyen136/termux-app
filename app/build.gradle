@@ -241,3 +241,6 @@ afterEvaluate {
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
     }
 }
+
+apply from: 'shell-bundle.gradle'
+
