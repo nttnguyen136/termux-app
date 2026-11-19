@@ -1,8 +1,6 @@
 package com.termux.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
@@ -13,6 +11,7 @@ import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.R;
 import com.termux.app.shell.BootstrapProgressListener;
 import com.termux.app.shell.ZshBundleInstaller;
@@ -125,14 +124,13 @@ final class TermuxInstaller {
             Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
         }
 
-        final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
+        final BootstrapProgressDialog progress = BootstrapProgressDialog.show(activity);
         final BootstrapProgressListener effectiveListener = new BootstrapProgressListener() {
             @Override
             public void onStageChanged(@NonNull final String title, @Nullable final String detail, final int progressPercent) {
                 activity.runOnUiThread(() -> {
                     try {
-                        String msg = (detail != null && !detail.isEmpty()) ? (title + "\n" + detail) : title;
-                        progress.setMessage(msg);
+                        progress.updateStage(title, detail, progressPercent);
                     } catch (RuntimeException ignored) {
                         // Activity already dismissed - ignore.
                     }
@@ -329,7 +327,7 @@ final class TermuxInstaller {
 
         activity.runOnUiThread(() -> {
             try {
-                new AlertDialog.Builder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
+                new MaterialAlertDialogBuilder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
                     .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {
                         dialog.dismiss();
                         activity.finish();

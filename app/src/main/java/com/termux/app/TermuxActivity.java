@@ -54,7 +54,10 @@ import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.termux.app.terminal.TerminalActionsBottomSheet;
 import com.termux.app.terminal.TermuxTopTabBarController;
 import com.termux.shared.termux.theme.TermuxAppearanceAware;
 import com.termux.shared.termux.theme.TermuxAppearancePreferences;
@@ -667,8 +670,46 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
 
+    private BottomSheetDialog mTerminalActionsBottomSheet;
+
+    public void showTerminalActionsBottomSheet() {
+        if (isFinishing() || isDestroyed()) return;
+        if (mTerminalActionsBottomSheet != null && mTerminalActionsBottomSheet.isShowing()) {
+            mTerminalActionsBottomSheet.dismiss();
+        }
+        mTerminalActionsBottomSheet = TerminalActionsBottomSheet.create(this);
+        mTerminalActionsBottomSheet.show();
+    }
+
+    public BottomSheetDialog getTerminalActionsBottomSheet() {
+        return mTerminalActionsBottomSheet;
+    }
+
+    public void resetTerminalSessionFromSheet(TerminalSession session) {
+        onResetTerminalSession(session);
+    }
+
+    public void showKillSessionDialogFromSheet(TerminalSession session) {
+        showKillSessionDialog(session);
+    }
+
+    public void toggleKeepScreenOnFromSheet() {
+        toggleKeepScreenOn();
+    }
+
+    public void showStylingDialogFromSheet() {
+        showStylingDialog();
+    }
+
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo) {
+        if (v == mTerminalView) {
+            // Replace legacy Android context menu with Material 3 Bottom Sheet while keeping
+            // text-selection ActionMode (Copy / Paste / More) intact.
+            showTerminalActionsBottomSheet();
+            return;
+        }
+
         TerminalSession currentSession = getCurrentSession();
         if (currentSession == null) return;
 
@@ -691,10 +732,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_REPORT_ID, Menu.NONE, R.string.action_report_issue);
     }
 
-    /** Hook system menu to show context menu instead. */
+    /** Hook system menu to show Material 3 terminal actions bottom sheet instead. */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        mTerminalView.showContextMenu();
+        showTerminalActionsBottomSheet();
         return false;
     }
 
@@ -754,7 +795,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private void showKillSessionDialog(TerminalSession session) {
         if (session == null) return;
 
-        final AlertDialog.Builder b = new AlertDialog.Builder(this);
+        final MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(this);
         b.setIcon(android.R.drawable.ic_dialog_alert);
         b.setMessage(R.string.title_confirm_kill_process);
         b.setPositiveButton(android.R.string.yes, (dialog, id) -> {
@@ -783,7 +824,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         } catch (ActivityNotFoundException | IllegalArgumentException e) {
             // The startActivity() call is not documented to throw IllegalArgumentException.
             // However, crash reporting shows that it sometimes does, so catch it here.
-            new AlertDialog.Builder(this).setMessage(getString(R.string.error_styling_not_installed))
+            new MaterialAlertDialogBuilder(this).setMessage(getString(R.string.error_styling_not_installed))
                 .setPositiveButton(R.string.action_styling_install,
                     (dialog, which) -> ActivityUtils.startActivity(this, new Intent(Intent.ACTION_VIEW, Uri.parse(TermuxConstants.TERMUX_STYLING_FDROID_PACKAGE_URL))))
                 .setNegativeButton(android.R.string.cancel, null).show();

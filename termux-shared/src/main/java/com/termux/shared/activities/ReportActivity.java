@@ -27,6 +27,7 @@ import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.markdown.MarkdownUtils;
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.models.ReportInfo;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.theme.NightMode;
 
 import org.commonmark.node.FencedCodeBlock;
@@ -82,6 +83,8 @@ public class ReportActivity extends AppCompatActivity {
         if (toolbar != null) {
             setSupportActionBar(toolbar);
         }
+
+        TermuxThemeManager.applyActivityChrome(this, TermuxThemeManager.getActivePalette(this));
 
         mBundle = null;
         Intent intent = getIntent();

@@ -28,6 +28,7 @@ import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.R;
 import com.termux.shared.models.TextIOInfo;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.view.KeyboardUtils;
 
 import org.jetbrains.annotations.NotNull;
@@ -76,6 +77,8 @@ public class TextIOActivity extends AppCompatActivity {
         if (toolbar != null) {
             setSupportActionBar(toolbar);
         }
+
+        TermuxThemeManager.applyActivityChrome(this, TermuxThemeManager.getActivePalette(this));
 
         mBundle = null;
         Intent intent = getIntent();

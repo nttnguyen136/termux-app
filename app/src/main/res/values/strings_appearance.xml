@@ -25,4 +25,12 @@
     <string name="session_status_running">Running</string>
     <string name="session_status_exited">Exited</string>
     <string name="session_status_exited_error">Exited (%1$d)</string>
+
+    <!-- Material 3 Terminal Actions Bottom Sheet & Bootstrap Dialog -->
+    <string name="terminal_actions_sheet_title">Terminal Actions</string>
+    <string name="action_paste_clipboard">Paste</string>
+    <string name="action_toggle_extra_keys">Toggle Extra Keys</string>
+    <string name="status_on">ON</string>
+    <string name="status_off">OFF</string>
+    <string name="bootstrap_dialog_title">Setting up Termux</string>
 </resources>
