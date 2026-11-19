@@ -98,8 +98,8 @@
             android:id="@+id/terminal_toolbar_view_pager"
             android:visibility="gone"
             android:layout_width="match_parent"
-            android:layout_height="37.5dp"
-            android:background="@color/black"
+            android:layout_height="40dp"
+            android:background="?attr/colorSurfaceContainer"
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>

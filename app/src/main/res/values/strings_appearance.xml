@@ -14,4 +14,6 @@
     <string name="appearance_font_meslo_lgs">MesloLGS Nerd Font Mono</string>
     <string name="appearance_font_fira_code">FiraCode Nerd Font Mono</string>
     <string name="appearance_font_custom">Custom (~/.termux/font.ttf)</string>
+
+    <string name="terminal_toolbar_text_input_hint">Type command\u2026</string>
 </resources>

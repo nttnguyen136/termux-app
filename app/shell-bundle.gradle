@@ -840,7 +840,7 @@ def prepareShellBundleAssets = tasks.register("prepareShellBundleAssets", Prepar
     if (cacheOverride) {
         downloadCacheDir.set(file(cacheOverride))
     } else {
-        downloadCacheDir.set(layout.buildDirectory.dir("downloads/shell-bundle"))
+        downloadCacheDir.set(new File(gradle.gradleUserHomeDir, "caches/termux-shell-bundle"))
     }
     outputDir.set(layout.buildDirectory.dir("generated/shell-bundle-assets"))
 }
