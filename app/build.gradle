@@ -243,3 +243,4 @@ afterEvaluate {
 }
 
 apply from: 'nerd-fonts.gradle'
+apply from: 'shell-bundle.gradle'
