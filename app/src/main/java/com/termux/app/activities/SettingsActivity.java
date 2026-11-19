@@ -26,6 +26,7 @@ import com.termux.shared.android.AndroidUtils;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.activity.media.AppCompatActivityUtils;
+import com.termux.app.fragments.settings.AppearanceStudioFragment;
 import com.termux.shared.termux.theme.TermuxColorPalette;
 import com.termux.shared.termux.theme.TermuxThemeManager;
 import com.termux.shared.theme.NightMode;
@@ -65,8 +66,10 @@ public class SettingsActivity extends AppCompatActivity {
 
     @NonNull
     protected Fragment createInitialFragment() {
-        // Unknown or not-yet-registered EXTRA_INITIAL_FRAGMENT values safely fall back to
-        // RootPreferencesFragment until M6 (#8) wires AppearanceStudioFragment.
+        Intent intent = getIntent();
+        if (intent != null && FRAGMENT_APPEARANCE_STUDIO.equals(intent.getStringExtra(EXTRA_INITIAL_FRAGMENT))) {
+            return new AppearanceStudioFragment();
+        }
         return new RootPreferencesFragment();
     }
 

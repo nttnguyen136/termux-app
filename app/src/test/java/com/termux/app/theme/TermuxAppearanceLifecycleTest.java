@@ -138,7 +138,7 @@ public class TermuxAppearanceLifecycleTest {
                  Robolectric.buildActivity(SettingsActivity.class, studioIntent)) {
             SettingsActivity activity = controller.create().start().resume().get();
             Fragment mounted = activity.getSupportFragmentManager().findFragmentById(R.id.settings);
-            assertTrue(mounted instanceof SettingsActivity.RootPreferencesFragment);
+            assertTrue(mounted instanceof com.termux.app.fragments.settings.AppearanceStudioFragment);
 
             TermuxColorPalette mocha = TermuxThemePresets.getBuiltInById(
                 TermuxColorPalette.THEME_CATPPUCCIN_MOCHA);
