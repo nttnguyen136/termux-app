@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!--
-     https://material.io/develop/android/theming/dark
+     Material 3 Light theme hierarchy for Termux app (Catppuccin Latte day defaults).
     -->
 
     <!-- TermuxApp Light DarkActionBar theme. -->
@@ -14,21 +14,26 @@
     <!-- TermuxApp DayNight NoActionBar theme. -->
     <style name="Theme.TermuxApp.DayNight.NoActionBar" parent="Theme.BaseActivity.DayNight.NoActionBar"/>
 
-
-    <!-- TermuxActivity DayNight NoActionBar theme. -->
+    <!-- TermuxActivity DayNight NoActionBar theme (Day / Catppuccin Latte). -->
     <style name="Theme.TermuxActivity.DayNight.NoActionBar" parent="Theme.TermuxApp.DayNight.NoActionBar">
         <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/black</item>
-        <item name="colorPrimaryVariant">@color/black</item>
+        <item name="colorPrimary">@color/catppuccin_latte_accent</item>
+        <item name="colorPrimaryVariant">@color/catppuccin_latte_accent</item>
+        <item name="colorOnPrimary">@color/catppuccin_latte_on_accent</item>
 
-        <item name="android:windowBackground">@color/black</item>
+        <item name="android:windowBackground">@color/catppuccin_latte_terminal_bg</item>
 
         <!-- Avoid action mode toolbar pushing down terminal content when
              selecting text on pre-6.0 (non-floating toolbar). -->
         <item name="android:windowActionModeOverlay">true</item>
 
-        <item name="android:windowTranslucentStatus">true</item>
-        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@color/catppuccin_latte_surface</item>
+        <item name="android:navigationBarColor">@color/catppuccin_latte_surface</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
 
         <!-- https://developer.android.com/training/tv/start/start.html#transition-color -->
         <item name="android:windowAllowReturnTransitionOverlap">true</item>
@@ -36,14 +41,14 @@
 
         <!-- Left drawer. -->
         <item name="buttonBarButtonStyle">@style/TermuxActivity.Drawer.ButtonBarStyle.Light</item>
-        <item name="termuxActivityDrawerBackground">@color/white</item>
-        <item name="termuxActivityDrawerImageTint">@color/black</item>
+        <item name="termuxActivityDrawerBackground">@color/catppuccin_latte_surface</item>
+        <item name="termuxActivityDrawerImageTint">@color/catppuccin_latte_on_surface</item>
 
         <!-- Extra keys colors. -->
-        <item name="extraKeysButtonTextColor">@color/white</item>
-        <item name="extraKeysButtonActiveTextColor">@color/red_400</item>
-        <item name="extraKeysButtonBackgroundColor">@color/black</item>
-        <item name="extraKeysButtonActiveBackgroundColor">@color/grey_500</item>
+        <item name="extraKeysButtonTextColor">@color/catppuccin_latte_on_surface</item>
+        <item name="extraKeysButtonActiveTextColor">@color/catppuccin_latte_on_accent</item>
+        <item name="extraKeysButtonBackgroundColor">@color/catppuccin_latte_keycap_bg</item>
+        <item name="extraKeysButtonActiveBackgroundColor">@color/catppuccin_latte_accent</item>
     </style>
 
 </resources>

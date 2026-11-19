@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Appearance, Theme & Nerd Font display labels -->
+    <string name="appearance_theme_catppuccin_mocha">Catppuccin Mocha</string>
+    <string name="appearance_theme_tokyo_night">Tokyo Night</string>
+    <string name="appearance_theme_dracula">Dracula</string>
+    <string name="appearance_theme_nord">Nord</string>
+    <string name="appearance_theme_gruvbox_dark">Gruvbox Dark</string>
+    <string name="appearance_theme_oled_pitch_black">OLED Pitch Black</string>
+    <string name="appearance_theme_catppuccin_latte">Catppuccin Latte</string>
+    <string name="appearance_theme_custom">Custom</string>
+
+    <string name="appearance_font_jetbrains_mono">JetBrainsMono Nerd Font Mono</string>
+    <string name="appearance_font_meslo_lgs">MesloLGS Nerd Font Mono</string>
+    <string name="appearance_font_fira_code">FiraCode Nerd Font Mono</string>
+    <string name="appearance_font_custom">Custom (~/.termux/font.ttf)</string>
+</resources>

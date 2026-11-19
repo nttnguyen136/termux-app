@@ -1,41 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!--
-     The light themes are only for day mode and must not be defined in night/theme.xml.
-     https://material.io/develop/android/theming/dark
+     The light themes are only for day mode and must not be defined in values-night/themes.xml.
+     Material 3 light baseline synchronized with Catppuccin Latte tokens.
     -->
 
-    <!--
-      BaseActivity Light DarkActionBar theme.
-      https://github.com/material-components/material-components-android/blob/1.4.0/lib/java/com/google/android/material/theme/res/values/themes.xml#L33
-     -->
-    <style name="Theme.BaseActivity.Light.DarkActionBar" parent="Theme.MaterialComponents.Light.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/red_400</item>
-        <item name="colorPrimaryVariant">@color/red_800</item>
-        <item name="colorOnPrimary">@color/white</item>
+    <!-- BaseActivity Light DarkActionBar theme (Material 3 Light). -->
+    <style name="Theme.BaseActivity.Light.DarkActionBar" parent="Theme.Material3.Light">
+        <!-- Primary brand & accent colors. -->
+        <item name="colorPrimary">@color/catppuccin_latte_accent</item>
+        <item name="colorPrimaryVariant">@color/catppuccin_latte_accent</item>
+        <item name="colorOnPrimary">@color/catppuccin_latte_on_accent</item>
+        <item name="colorPrimaryContainer">@color/catppuccin_latte_surface_container_high</item>
+        <item name="colorOnPrimaryContainer">@color/catppuccin_latte_on_surface</item>
 
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/grey_900</item>
-        <item name="colorSecondaryVariant">@color/black</item>
-        <item name="colorOnSecondary">@color/white</item>
+        <!-- Secondary brand colors. -->
+        <item name="colorSecondary">@color/catppuccin_latte_accent</item>
+        <item name="colorSecondaryVariant">@color/catppuccin_latte_accent</item>
+        <item name="colorOnSecondary">@color/catppuccin_latte_on_accent</item>
+        <item name="colorSecondaryContainer">@color/catppuccin_latte_surface_container_high</item>
+        <item name="colorOnSecondaryContainer">@color/catppuccin_latte_on_surface</item>
 
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
-        <item name="colorPrimaryDark" tools:targetApi="l">?attr/colorPrimary</item>
+        <!-- Material 3 surface, outline, and error tokens. -->
+        <item name="colorSurface">@color/catppuccin_latte_surface</item>
+        <item name="colorOnSurface">@color/catppuccin_latte_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/catppuccin_latte_on_surface_variant</item>
+        <item name="colorSurfaceContainer">@color/catppuccin_latte_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/catppuccin_latte_surface_container_high</item>
+        <item name="colorOutline">@color/catppuccin_latte_outline</item>
+        <item name="colorError">@color/catppuccin_latte_error</item>
+        <item name="colorOnError">@color/catppuccin_latte_on_error</item>
 
-        <!-- Text color. -->
-        <item name="android:textColorPrimary">@color/black</item>
-        <item name="android:textColorLink">@color/blue_link_light</item>
+        <!-- Window & system bars. -->
+        <item name="android:colorBackground">@color/catppuccin_latte_surface_container</item>
+        <item name="android:windowBackground">@color/catppuccin_latte_surface_container</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@color/catppuccin_latte_surface</item>
+        <item name="android:navigationBarColor" tools:targetApi="l">@color/catppuccin_latte_surface</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="colorPrimaryDark" tools:targetApi="l">@color/catppuccin_latte_surface</item>
 
-        <!--
-         Dialog Themes.
-         These MUST be defined for the application `android:theme` so that if dialogs
-         are shown from non-activity context with TYPE_SYSTEM_ALERT, the correct dialog theme is
-         applied, otherwise exceptions like `UnsupportedOperationException: Failed to resolve attribute
-         at index... TypedValue` will be thrown, since ThemeOverlay would have all the activity
-         theme attributes defined.
-        -->
+        <!-- Text colors. -->
+        <item name="android:textColorPrimary">@color/catppuccin_latte_on_surface</item>
+        <item name="android:textColorSecondary">@color/catppuccin_latte_on_surface_variant</item>
+        <item name="android:textColorLink">@color/catppuccin_latte_accent</item>
+
+        <!-- Dialog Themes. -->
         <item name="alertDialogTheme">@style/ThemeOverlay.BaseDialog.DayNight</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.BaseDialog.DayNight</item>
     </style>
@@ -46,14 +56,10 @@
         <item name="windowNoTitle">true</item>
     </style>
 
-
-
     <!-- BaseActivity DayNight DarkActionBar theme. -->
     <style name="Theme.BaseActivity.DayNight.DarkActionBar" parent="Theme.BaseActivity.Light.DarkActionBar"/>
     <!-- BaseActivity DayNight NoActionBar theme. -->
     <style name="Theme.BaseActivity.DayNight.NoActionBar" parent="Theme.BaseActivity.Light.NoActionBar"/>
-
-
 
     <!-- BaseActivity extended classes Day NoActionBar themes. -->
     <style name="Theme.MediaViewActivity.Light" parent="Theme.BaseActivity.Light.NoActionBar"/>
@@ -63,33 +69,19 @@
     <style name="Theme.MediaViewActivity.DayNight" parent="Theme.BaseActivity.DayNight.NoActionBar"/>
     <style name="Theme.MarkdownViewActivity.DayNight" parent="Theme.MediaViewActivity.DayNight"/>
 
-
-
-
-
-    <!--
-      BaseDialog Light theme.
-      https://github.com/material-components/material-components-android/blob/1.4.0/lib/java/com/google/android/material/dialog/res/values/themes.xml#L70
-     -->
-    <style name="ThemeOverlay.BaseDialog.Light" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/red_400</item>
-        <item name="colorPrimaryVariant">@color/red_800</item>
-        <item name="colorOnPrimary">@color/white</item>
-
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/grey_900</item>
-        <item name="colorSecondaryVariant">@color/black</item>
-        <item name="colorOnSecondary">@color/white</item>
-
-        <!-- Surface color. -->
-        <item name="colorSurface">@color/design_default_color_surface</item>
-        <item name="colorOnSurface">@color/design_default_color_on_surface</item>
-
-        <!-- Dialog title panel style. -->
+    <!-- BaseDialog Light theme (Material 3 AlertDialog overlay). -->
+    <style name="ThemeOverlay.BaseDialog.Light" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorPrimary">@color/catppuccin_latte_accent</item>
+        <item name="colorPrimaryVariant">@color/catppuccin_latte_accent</item>
+        <item name="colorOnPrimary">@color/catppuccin_latte_on_accent</item>
+        <item name="colorSecondary">@color/catppuccin_latte_accent</item>
+        <item name="colorSecondaryVariant">@color/catppuccin_latte_accent</item>
+        <item name="colorOnSecondary">@color/catppuccin_latte_on_accent</item>
+        <item name="colorSurface">@color/catppuccin_latte_surface_container</item>
+        <item name="colorOnSurface">@color/catppuccin_latte_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/catppuccin_latte_on_surface_variant</item>
+        <item name="colorSurfaceContainerHigh">@color/catppuccin_latte_surface_container_high</item>
         <item name="materialAlertDialogTitlePanelStyle">@style/BaseDialog.Title.Panel</item>
-
-        <!-- Dialog message text style. -->
         <item name="materialAlertDialogBodyTextStyle">@style/BaseDialog.Message.Text.Light</item>
     </style>
 

@@ -1,29 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!--
-     https://material.io/develop/android/theming/dark
+     Material 3 dark baseline synchronized with Catppuccin Mocha tokens.
     -->
 
-    <!--
-     BaseActivity DayNight DarkActionBar theme.
-     https://github.com/material-components/material-components-android/blob/1.4.0/lib/java/com/google/android/material/theme/res/values/themes.xml#L27
-    -->
-    <style name="Theme.BaseActivity.DayNight.DarkActionBar" parent="Theme.MaterialComponents">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/red_400</item>
-        <item name="colorPrimaryVariant">@color/red_800</item>
-        <item name="colorOnPrimary">@color/black</item>
+    <!-- BaseActivity DayNight DarkActionBar theme (Material 3 Dark). -->
+    <style name="Theme.BaseActivity.DayNight.DarkActionBar" parent="Theme.Material3.Dark">
+        <!-- Primary brand & accent colors. -->
+        <item name="colorPrimary">@color/catppuccin_mocha_accent</item>
+        <item name="colorPrimaryVariant">@color/catppuccin_mocha_accent</item>
+        <item name="colorOnPrimary">@color/catppuccin_mocha_on_accent</item>
+        <item name="colorPrimaryContainer">@color/catppuccin_mocha_surface_container_high</item>
+        <item name="colorOnPrimaryContainer">@color/catppuccin_mocha_on_surface</item>
 
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/grey_400</item>
-        <item name="colorSecondaryVariant">@color/grey_500</item>
-        <item name="colorOnSecondary">@color/black</item>
+        <!-- Secondary brand colors. -->
+        <item name="colorSecondary">@color/catppuccin_mocha_accent</item>
+        <item name="colorSecondaryVariant">@color/catppuccin_mocha_accent</item>
+        <item name="colorOnSecondary">@color/catppuccin_mocha_on_accent</item>
+        <item name="colorSecondaryContainer">@color/catppuccin_mocha_surface_container_high</item>
+        <item name="colorOnSecondaryContainer">@color/catppuccin_mocha_on_surface</item>
 
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
-        <item name="colorPrimaryDark" tools:targetApi="l">?attr/colorPrimary</item>
+        <!-- Material 3 surface, outline, and error tokens. -->
+        <item name="colorSurface">@color/catppuccin_mocha_surface</item>
+        <item name="colorOnSurface">@color/catppuccin_mocha_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/catppuccin_mocha_on_surface_variant</item>
+        <item name="colorSurfaceContainer">@color/catppuccin_mocha_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/catppuccin_mocha_surface_container_high</item>
+        <item name="colorOutline">@color/catppuccin_mocha_outline</item>
+        <item name="colorError">@color/catppuccin_mocha_error</item>
+        <item name="colorOnError">@color/catppuccin_mocha_on_error</item>
 
-        <!-- Text color. -->
-        <item name="android:textColorLink">@color/blue_link_dark</item>
+        <!-- Window & system bars. -->
+        <item name="android:colorBackground">@color/catppuccin_mocha_surface_container</item>
+        <item name="android:windowBackground">@color/catppuccin_mocha_surface_container</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@color/catppuccin_mocha_surface</item>
+        <item name="android:navigationBarColor" tools:targetApi="l">@color/catppuccin_mocha_surface</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="colorPrimaryDark" tools:targetApi="l">@color/catppuccin_mocha_surface</item>
+
+        <!-- Text colors. -->
+        <item name="android:textColorPrimary">@color/catppuccin_mocha_on_surface</item>
+        <item name="android:textColorSecondary">@color/catppuccin_mocha_on_surface_variant</item>
+        <item name="android:textColorLink">@color/catppuccin_mocha_accent</item>
+
+        <!-- Dialog Themes. -->
+        <item name="alertDialogTheme">@style/ThemeOverlay.BaseDialog.DayNight</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.BaseDialog.DayNight</item>
     </style>
 
     <!-- BaseActivity DayNight NoActionBar theme. -->
@@ -32,33 +55,19 @@
         <item name="windowNoTitle">true</item>
     </style>
 
-
-
-
-
-    <!--
-      BaseDialog DayNight theme.
-      https://github.com/material-components/material-components-android/blob/1.4.0/lib/java/com/google/android/material/dialog/res/values/themes.xml#L70
-     -->
-    <style name="ThemeOverlay.BaseDialog.DayNight" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/red_400</item>
-        <item name="colorPrimaryVariant">@color/red_800</item>
-        <item name="colorOnPrimary">@color/black</item>
-
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/grey_400</item>
-        <item name="colorSecondaryVariant">@color/grey_500</item>
-        <item name="colorOnSecondary">@color/black</item>
-
-        <!-- Surface color. -->
-        <item name="colorSurface">@color/design_dark_default_color_surface</item>
-        <item name="colorOnSurface">@color/design_dark_default_color_on_surface</item>
-
-        <!-- Dialog title panel style. -->
+    <!-- BaseDialog DayNight theme (Material 3 AlertDialog overlay). -->
+    <style name="ThemeOverlay.BaseDialog.DayNight" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorPrimary">@color/catppuccin_mocha_accent</item>
+        <item name="colorPrimaryVariant">@color/catppuccin_mocha_accent</item>
+        <item name="colorOnPrimary">@color/catppuccin_mocha_on_accent</item>
+        <item name="colorSecondary">@color/catppuccin_mocha_accent</item>
+        <item name="colorSecondaryVariant">@color/catppuccin_mocha_accent</item>
+        <item name="colorOnSecondary">@color/catppuccin_mocha_on_accent</item>
+        <item name="colorSurface">@color/catppuccin_mocha_surface_container</item>
+        <item name="colorOnSurface">@color/catppuccin_mocha_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/catppuccin_mocha_on_surface_variant</item>
+        <item name="colorSurfaceContainerHigh">@color/catppuccin_mocha_surface_container_high</item>
         <item name="materialAlertDialogTitlePanelStyle">@style/BaseDialog.Title.Panel</item>
-
-        <!-- Dialog message text style. -->
         <item name="materialAlertDialogBodyTextStyle">@style/BaseDialog.Message.Text.Dark</item>
     </style>
 

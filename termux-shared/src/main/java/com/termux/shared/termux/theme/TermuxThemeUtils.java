@@ -11,15 +11,17 @@ import com.termux.shared.theme.NightMode;
 
 public class TermuxThemeUtils {
 
-    /** Get the {@link TermuxPropertyConstants#KEY_NIGHT_MODE} value from the properties file on disk
-     * and set it to app wide night mode value. */
+    /**
+     * Resolve the active {@link TermuxColorPalette} via {@link TermuxThemeManager}
+     * and synchronize the app-wide {@link NightMode} with {@code palette.isLight}.
+     */
     public static void setAppNightMode(@NonNull Context context) {
-        NightMode.setAppNightMode(TermuxSharedProperties.getNightMode(context));
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(context);
+        TermuxThemeManager.syncAppNightMode(palette);
     }
 
     /** Set name as app wide night mode value. */
     public static void setAppNightMode(@Nullable String name) {
         NightMode.setAppNightMode(name);
     }
-
 }
