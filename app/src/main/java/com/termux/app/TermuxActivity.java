@@ -54,6 +54,8 @@ import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 
+import com.google.android.material.button.MaterialButton;
+import com.termux.app.terminal.TermuxTopTabBarController;
 import com.termux.shared.termux.theme.TermuxAppearanceAware;
 import com.termux.shared.termux.theme.TermuxAppearancePreferences;
 import com.termux.shared.termux.theme.TermuxColorPalette;
@@ -67,9 +69,12 @@ import com.termux.terminal.TerminalSessionClient;
 import com.termux.view.TerminalView;
 import com.termux.view.TerminalViewClient;
 
+import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.ImageViewCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
@@ -186,6 +191,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private long mLastAppliedAppearanceRevision = -1L;
 
+    private TermuxTopTabBarController mTermuxTopTabBarController;
+
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
@@ -261,6 +268,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setNewSessionButtonView();
 
         setToggleKeyboardView();
+
+        mTermuxTopTabBarController = new TermuxTopTabBarController(this);
 
         registerForContextMenu(mTerminalView);
 
@@ -586,9 +595,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private void setSettingsButtonView() {
         ImageButton settingsButton = findViewById(R.id.settings_button);
-        settingsButton.setOnClickListener(v -> {
-            ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
-        });
+        if (settingsButton != null) {
+            settingsButton.setOnClickListener(v -> {
+                if (getDrawer() != null) getDrawer().closeDrawers();
+                ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
+            });
+        }
+
+        ImageButton appearanceButton = findViewById(R.id.appearance_button);
+        if (appearanceButton != null) {
+            appearanceButton.setOnClickListener(v -> {
+                if (getDrawer() != null) getDrawer().closeDrawers();
+                ActivityUtils.startActivity(this, SettingsActivity.createAppearanceStudioIntent(this));
+            });
+        }
     }
 
     private void setNewSessionButtonView() {
@@ -883,7 +903,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     public void termuxSessionListNotifyUpdated() {
-        mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTermuxSessionListViewController != null) {
+            mTermuxSessionListViewController.notifyDataSetChanged();
+        }
+        if (mTermuxTopTabBarController != null) {
+            mTermuxTopTabBarController.rebuildTabs();
+        }
     }
 
     public boolean isVisible() {
@@ -1102,12 +1127,49 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (leftDrawer != null) {
             leftDrawer.setBackgroundColor(palette.surface);
         }
+
+        TextView brandTitle = findViewById(R.id.drawer_brand_title);
+        if (brandTitle != null) {
+            brandTitle.setTextColor(palette.onSurface);
+            brandTitle.setTypeface(typeface, Typeface.BOLD);
+        }
+        TextView brandSubtitle = findViewById(R.id.drawer_brand_subtitle);
+        if (brandSubtitle != null) {
+            brandSubtitle.setTextColor(palette.onSurfaceVariant);
+            brandSubtitle.setText(palette.displayName);
+        }
+
+        int subtleDivider = ColorUtils.setAlphaComponent(palette.outline, 80);
+        View headerDivider = findViewById(R.id.drawer_header_divider);
+        if (headerDivider != null) headerDivider.setBackgroundColor(subtleDivider);
+        View footerDivider = findViewById(R.id.drawer_footer_divider);
+        if (footerDivider != null) footerDivider.setBackgroundColor(subtleDivider);
+
         ImageButton settingsButton = findViewById(R.id.settings_button);
         if (settingsButton != null) {
             ImageViewCompat.setImageTintList(settingsButton, ColorStateList.valueOf(palette.onSurface));
         }
+        ImageButton appearanceButton = findViewById(R.id.appearance_button);
+        if (appearanceButton != null) {
+            ImageViewCompat.setImageTintList(appearanceButton, ColorStateList.valueOf(palette.accent));
+        }
+
+        MaterialButton toggleKeyboardBtn = findViewById(R.id.toggle_keyboard_button);
+        if (toggleKeyboardBtn != null) {
+            toggleKeyboardBtn.setBackgroundTintList(ColorStateList.valueOf(palette.surfaceContainerHigh));
+            toggleKeyboardBtn.setTextColor(palette.onSurface);
+        }
+        MaterialButton newSessionBtn = findViewById(R.id.new_session_button);
+        if (newSessionBtn != null) {
+            newSessionBtn.setBackgroundTintList(ColorStateList.valueOf(palette.accent));
+            newSessionBtn.setTextColor(palette.onAccent);
+        }
+
         if (mTermuxSessionListViewController != null) {
-            mTermuxSessionListViewController.notifyDataSetChanged();
+            mTermuxSessionListViewController.applyAppearance(palette, typeface);
+        }
+        if (mTermuxTopTabBarController != null) {
+            mTermuxTopTabBarController.applyAppearance(palette, typeface);
         }
     }
 

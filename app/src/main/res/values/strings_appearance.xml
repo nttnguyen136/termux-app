@@ -16,4 +16,13 @@
     <string name="appearance_font_custom">Custom (~/.termux/font.ttf)</string>
 
     <string name="terminal_toolbar_text_input_hint">Type command\u2026</string>
+
+    <!-- Left Drawer & Optional Top Tab Bar -->
+    <string name="action_open_appearance">Appearance &amp; Shell</string>
+    <string name="action_open_drawer">Open sessions drawer</string>
+    <string name="action_close_session">Close session</string>
+    <string name="drawer_sessions_label">Sessions</string>
+    <string name="session_status_running">Running</string>
+    <string name="session_status_exited">Exited</string>
+    <string name="session_status_exited_error">Exited (%1$d)</string>
 </resources>
