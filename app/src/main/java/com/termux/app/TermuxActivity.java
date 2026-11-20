@@ -57,6 +57,9 @@ import android.graphics.Typeface;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.termux.app.ssh.SshConnectionLauncher;
+import com.termux.app.ssh.SshDrawerCoordinator;
+import com.termux.app.ssh.SshProfileRepository;
 import com.termux.app.terminal.TerminalActionsBottomSheet;
 import com.termux.app.terminal.TermuxTopTabBarController;
 import com.termux.shared.termux.theme.TermuxAppearanceAware;
@@ -76,6 +79,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.ImageViewCompat;
@@ -203,6 +207,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private TermuxTopTabBarController mTermuxTopTabBarController;
 
+    private SshDrawerCoordinator mSshDrawerCoordinator;
+
+    @Nullable
+    private static volatile SshDrawerCoordinator.DependenciesFactory sSshDrawerDependencyFactoryForTests;
+
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
@@ -281,6 +290,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         mTermuxTopTabBarController = new TermuxTopTabBarController(this);
 
+        initSshDrawerCoordinator();
+
         registerForContextMenu(mTerminalView);
 
         applyCurrentAppearance();
@@ -323,6 +334,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         syncAppearanceIfNeeded();
 
+        if (mSshDrawerCoordinator != null) {
+            mSshDrawerCoordinator.refreshHosts();
+        }
+
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onStart();
 
@@ -360,6 +375,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mIsInvalidState) return;
 
         syncAppearanceIfNeeded();
+
+        if (mSshDrawerCoordinator != null) {
+            mSshDrawerCoordinator.refreshHosts();
+        }
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();
@@ -1264,9 +1283,45 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTermuxSessionListViewController != null) {
             mTermuxSessionListViewController.applyAppearance(palette, typeface);
         }
+        if (mSshDrawerCoordinator != null) {
+            mSshDrawerCoordinator.applyAppearance(palette, typeface);
+        }
         if (mTermuxTopTabBarController != null) {
             mTermuxTopTabBarController.applyAppearance(palette, typeface);
         }
+    }
+
+    private void initSshDrawerCoordinator() {
+        SshDrawerCoordinator.DependenciesFactory factory = sSshDrawerDependencyFactoryForTests;
+        SshDrawerCoordinator.Dependencies deps = factory != null
+            ? factory.create(this)
+            : SshDrawerCoordinator.Dependencies.createDefault(this);
+        mSshDrawerCoordinator = new SshDrawerCoordinator(this, deps);
+        mSshDrawerCoordinator.refreshHosts();
+    }
+
+    @VisibleForTesting
+    public static void setSshDrawerDependencyFactoryForTests(
+            @Nullable SshDrawerCoordinator.DependenciesFactory factory) {
+        sSshDrawerDependencyFactoryForTests = factory;
+    }
+
+    @VisibleForTesting
+    public void setSshDrawerCoordinatorForTesting(
+            @NonNull SshProfileRepository repository,
+            @NonNull SshConnectionLauncher connectionLauncher) {
+        SshDrawerCoordinator.Dependencies deps =
+            new SshDrawerCoordinator.Dependencies(repository, connectionLauncher);
+        if (mSshDrawerCoordinator == null) {
+            mSshDrawerCoordinator = new SshDrawerCoordinator(this, deps);
+        } else {
+            mSshDrawerCoordinator.setDependencies(deps);
+        }
+        mSshDrawerCoordinator.refreshHosts();
+        mSshDrawerCoordinator.applyAppearance(
+            TermuxThemeManager.getActivePalette(this),
+            TermuxFontManager.getActiveTypeface(this)
+        );
     }
 
 
