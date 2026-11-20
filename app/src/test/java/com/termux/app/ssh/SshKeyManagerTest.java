@@ -34,6 +34,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -449,5 +455,62 @@ public class SshKeyManagerTest {
         assertEquals(SshKeyGenerationResult.Status.FAILED, failed.getStatus());
         assertFalse(failed.isSuccess());
         assertTrue(failed.getErrorMessage().contains("passphrase too short"));
+    }
+
+    @Test
+    public void concurrentEd25519KeyGenerationSerializesRunnerAndAvoidsFilenameCollision() throws Exception {
+        File prefixDir = tempFolder.newFolder("prefix-conc");
+        File binDir = new File(prefixDir, "bin");
+        assertTrue(binDir.mkdirs());
+        File sshKeygen = new File(binDir, "ssh-keygen");
+        Files.write(sshKeygen.toPath(), "#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(sshKeygen.setExecutable(true, true));
+
+        File homeDir = tempFolder.newFolder("home-conc");
+        AtomicInteger activeRunners = new AtomicInteger(0);
+        AtomicInteger maxConcurrentRunners = new AtomicInteger(0);
+        CountDownLatch firstEnteredRunner = new CountDownLatch(1);
+
+        SshKeygenRunner slowRunner = (pfx, home, bin, args) -> {
+            int active = activeRunners.incrementAndGet();
+            maxConcurrentRunners.accumulateAndGet(active, Math::max);
+            firstEnteredRunner.countDown();
+            try {
+                Thread.sleep(60L);
+                String targetPath = args.get(args.indexOf("-f") + 1);
+                File priv = new File(targetPath);
+                File pub = new File(targetPath + ".pub");
+                if (priv.exists() || pub.exists()) {
+                    return SshKeygenRunner.ExecutionResult.failure(1, "", "File already exists: " + targetPath);
+                }
+                Files.write(priv.toPath(), ("PRIV-" + priv.getName()).getBytes(StandardCharsets.UTF_8));
+                Files.write(pub.toPath(), ("ssh-ed25519 AAAA-" + priv.getName() + "\n").getBytes(StandardCharsets.UTF_8));
+                return SshKeygenRunner.ExecutionResult.success("ok", "");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
+                activeRunners.decrementAndGet();
+            }
+        };
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<SshKeyGenerationResult> first = pool.submit(() -> SshKeyManager.generateEd25519Key(
+                prefixDir, homeDir, "id_ed25519", "", null, slowRunner));
+            assertTrue(firstEnteredRunner.await(5, TimeUnit.SECONDS));
+            Future<SshKeyGenerationResult> second = pool.submit(() -> SshKeyManager.generateEd25519Key(
+                prefixDir, homeDir, "id_ed25519", "", null, slowRunner));
+
+            SshKeyGenerationResult r1 = first.get(5, TimeUnit.SECONDS);
+            SshKeyGenerationResult r2 = second.get(5, TimeUnit.SECONDS);
+
+            assertEquals(1, maxConcurrentRunners.get());
+            assertTrue("First keygen failed: " + r1.getErrorMessage(), r1.isSuccess());
+            assertTrue("Second keygen failed: " + r2.getErrorMessage(), r2.isSuccess());
+            assertEquals("id_ed25519", r1.getPrivateKeyFile().getName());
+            assertEquals("id_ed25519_1", r2.getPrivateKeyFile().getName());
+        } finally {
+            pool.shutdownNow();
+        }
     }
 }

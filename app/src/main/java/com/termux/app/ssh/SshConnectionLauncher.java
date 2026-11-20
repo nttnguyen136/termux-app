@@ -6,9 +6,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.R;
-import com.termux.shared.interact.MessageDialogUtils;
+import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.shared.termux.theme.TermuxColorPalette;
+import com.termux.shared.termux.theme.TermuxThemeManager;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,6 +19,7 @@ import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Coordinates SSH pre-flight checks, ephemeral {@code SSH_ASKPASS} secret provisioning,
@@ -24,7 +28,10 @@ import java.util.Map;
  */
 public final class SshConnectionLauncher {
 
+    private static final String LOG_TAG = "SshConnectionLauncher";
+
     public enum LaunchStatus {
+        PENDING,
         LAUNCHED,
         PROMPTED_INSTALL_OPENSSH,
         VALIDATION_ERROR,
@@ -73,6 +80,7 @@ public final class SshConnectionLauncher {
     @NonNull private final SshSessionLaunchGateway gateway;
     @NonNull private final Clock clock;
     @NonNull private final MissingOpenSshPrompter missingOpenSshPrompter;
+    private final AtomicBoolean gatewayLaunchInFlight = new AtomicBoolean(false);
 
     public SshConnectionLauncher(
             @NonNull Activity activity,
@@ -94,8 +102,7 @@ public final class SshConnectionLauncher {
                 activity,
                 profile,
                 SshCommandBuilder.getSshBinary(prefixDir),
-                onConfirm,
-                null
+                onConfirm
             )
         );
     }
@@ -117,11 +124,6 @@ public final class SshConnectionLauncher {
         this.gateway = gateway;
         this.clock = clock;
         this.missingOpenSshPrompter = missingOpenSshPrompter;
-    }
-
-    @NonNull
-    public static SshConnectionLauncher createDefault(@NonNull Activity activity) {
-        return createDefault(activity, SshProfileRepository.createDefault(activity));
     }
 
     @NonNull
@@ -162,89 +164,108 @@ public final class SshConnectionLauncher {
         if (!isOpenSshInstalled()) {
             AlertDialog dialog = missingOpenSshPrompter.promptInstallOpenSsh(
                 profile,
-                () -> launchInstallAndConnect(profile, callback)
+                () -> executePreparedLaunch(profile, true, callback)
             );
             LaunchOutcome outcome = new LaunchOutcome(LaunchStatus.PROMPTED_INSTALL_OPENSSH, dialog, null);
             notifyCallback(callback, outcome);
             return outcome;
         }
 
-        LaunchOutcome outcome = launchDirectSsh(profile);
-        showErrorDialogIfNeeded(outcome);
-        notifyCallback(callback, outcome);
-        return outcome;
+        return executePreparedLaunch(profile, false, callback);
     }
 
     @NonNull
-    private LaunchOutcome launchDirectSsh(@NonNull SshProfile profile) {
-        SshAskPassManager.PreparedAskPass askPass = null;
-        try {
-            SshCommandSpec spec = SshCommandBuilder.build(profile, prefixDir);
-            askPass = prepareAskPassIfSecretExists(profile);
-            Map<String, String> env = askPass != null ? askPass.toEnvironment() : Collections.emptyMap();
-
-            SshSessionLaunchRequest request = new SshSessionLaunchRequest(
-                spec.executablePath,
-                spec.arguments,
-                homeDir.getAbsolutePath(),
-                spec.sessionTitle,
-                env
-            );
-
-            if (!gateway.launchSession(request)) {
-                cleanupQuietly(askPass);
-                return new LaunchOutcome(LaunchStatus.LAUNCH_FAILED, null, "Failed to start SSH session");
-            }
-
-            repository.markUsed(profile.id, clock.currentTimeMillis());
-            return new LaunchOutcome(LaunchStatus.LAUNCHED, null, null);
-        } catch (IllegalArgumentException e) {
-            cleanupQuietly(askPass);
-            return new LaunchOutcome(LaunchStatus.VALIDATION_ERROR, null, e.getMessage());
-        } catch (GeneralSecurityException | IOException e) {
-            cleanupQuietly(askPass);
-            return new LaunchOutcome(LaunchStatus.CREDENTIAL_ERROR, null, e.getMessage());
-        }
-    }
-
-    @NonNull
-    private LaunchOutcome launchInstallAndConnect(
+    private LaunchOutcome executePreparedLaunch(
             @NonNull SshProfile profile,
+            boolean installOpenSshFirst,
             @Nullable LaunchCallback callback) {
+        if (!gatewayLaunchInFlight.compareAndSet(false, true)) {
+            return new LaunchOutcome(LaunchStatus.PENDING, null, null);
+        }
+
         SshAskPassManager.PreparedAskPass askPass = null;
         try {
             SshCommandSpec spec = SshCommandBuilder.build(profile, prefixDir);
             askPass = prepareAskPassIfSecretExists(profile);
             Map<String, String> env = askPass != null ? askPass.toEnvironment() : Collections.emptyMap();
-            String shellCommand = SshCommandBuilder.buildInstallOpenSshAndConnectCommand(spec, askPass);
 
-            SshSessionLaunchRequest request = new SshSessionLaunchRequest(
-                SshCommandBuilder.getShBinary(prefixDir).getAbsolutePath(),
-                Arrays.asList("-c", shellCommand),
-                homeDir.getAbsolutePath(),
-                spec.sessionTitle,
-                env
-            );
-
-            if (!gateway.launchSession(request)) {
-                cleanupQuietly(askPass);
-                LaunchOutcome failed = new LaunchOutcome(
-                    LaunchStatus.LAUNCH_FAILED, null, "Failed to start install-and-connect session");
-                notifyCallback(callback, failed);
-                return failed;
+            SshSessionLaunchRequest request;
+            if (installOpenSshFirst) {
+                String shellCommand = SshCommandBuilder.buildInstallOpenSshAndConnectCommand(spec, askPass);
+                request = new SshSessionLaunchRequest(
+                    SshCommandBuilder.getShBinary(prefixDir).getAbsolutePath(),
+                    Arrays.asList("-c", shellCommand),
+                    homeDir.getAbsolutePath(),
+                    spec.sessionTitle,
+                    env
+                );
+            } else {
+                request = new SshSessionLaunchRequest(
+                    spec.executablePath,
+                    spec.arguments,
+                    homeDir.getAbsolutePath(),
+                    spec.sessionTitle,
+                    env
+                );
             }
 
-            repository.markUsed(profile.id, clock.currentTimeMillis());
-            LaunchOutcome launched = new LaunchOutcome(LaunchStatus.LAUNCHED, null, null);
-            notifyCallback(callback, launched);
-            return launched;
+            final SshAskPassManager.PreparedAskPass finalAskPass = askPass;
+            final LaunchOutcome[] syncOutcome = new LaunchOutcome[1];
+            final AtomicBoolean completed = new AtomicBoolean(false);
+            try {
+                gateway.launchSession(request, launched -> {
+                    if (!completed.compareAndSet(false, true)) {
+                        return;
+                    }
+                    LaunchOutcome resolved;
+                    try {
+                        if (!launched) {
+                            cleanupQuietly(finalAskPass);
+                            resolved = new LaunchOutcome(
+                                LaunchStatus.LAUNCH_FAILED,
+                                null,
+                                installOpenSshFirst
+                                    ? "Failed to start install-and-connect session"
+                                    : "Failed to start SSH session"
+                            );
+                        } else {
+                            try {
+                                repository.markUsed(profile.id, clock.currentTimeMillis());
+                            } catch (IOException e) {
+                                Logger.logStackTraceWithMessage(
+                                    LOG_TAG,
+                                    "Failed to record lastUsedAtMillis for SSH profile " + profile.id,
+                                    e
+                                );
+                            }
+                            resolved = new LaunchOutcome(LaunchStatus.LAUNCHED, null, null);
+                        }
+                    } finally {
+                        gatewayLaunchInFlight.set(false);
+                    }
+                    syncOutcome[0] = resolved;
+                    notifyCallback(callback, resolved);
+                });
+            } catch (RuntimeException e) {
+                if (completed.compareAndSet(false, true)) {
+                    gatewayLaunchInFlight.set(false);
+                    cleanupQuietly(askPass);
+                }
+                throw e;
+            }
+
+            return syncOutcome[0] != null
+                ? syncOutcome[0]
+                : new LaunchOutcome(LaunchStatus.PENDING, null, null);
         } catch (IllegalArgumentException e) {
+            gatewayLaunchInFlight.set(false);
             cleanupQuietly(askPass);
             LaunchOutcome outcome = new LaunchOutcome(LaunchStatus.VALIDATION_ERROR, null, e.getMessage());
             showErrorDialogIfNeeded(outcome);
             notifyCallback(callback, outcome);
             return outcome;
         } catch (GeneralSecurityException | IOException e) {
+            gatewayLaunchInFlight.set(false);
             cleanupQuietly(askPass);
             LaunchOutcome outcome = new LaunchOutcome(LaunchStatus.CREDENTIAL_ERROR, null, e.getMessage());
             showErrorDialogIfNeeded(outcome);
@@ -267,12 +288,13 @@ public final class SshConnectionLauncher {
         } else {
             return;
         }
-        MessageDialogUtils.showMessage(
-            activity,
-            activity.getString(R.string.ssh_launch_error_title),
-            message,
-            null
-        );
+        TermuxColorPalette palette = TermuxThemeManager.getActivePalette(activity);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.ssh_launch_error_title)
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .create();
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
     }
 
     @Nullable

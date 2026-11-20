@@ -3,8 +3,6 @@ package com.termux.app.ssh;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.termux.shared.termux.TermuxConstants;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -85,22 +83,6 @@ public final class SshConfigImporter {
     }
 
     private SshConfigImporter() {
-    }
-
-    @NonNull
-    public static File getDefaultHomeDir() {
-        return new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
-    }
-
-    @NonNull
-    public static File getDefaultConfigFile() {
-        return new File(new File(getDefaultHomeDir(), ".ssh"), "config");
-    }
-
-    @NonNull
-    public static List<ImportCandidate> parseDefault(@Nullable List<SshProfile> existingProfiles)
-            throws IOException {
-        return parse(getDefaultConfigFile(), getDefaultHomeDir(), existingProfiles);
     }
 
     @NonNull
@@ -217,7 +199,8 @@ public final class SshConfigImporter {
             return;
         }
         boolean hasExplicitHostName = block.hostName != null && !block.hostName.isEmpty();
-        int count = hasExplicitHostName ? 1 : block.aliases.size();
+        boolean expandAllAliases = !hasExplicitHostName || block.hostName.contains("%h");
+        int count = expandAllAliases ? block.aliases.size() : 1;
         for (int i = 0; i < count; i++) {
             String alias = block.aliases.get(i);
             String resolvedHost = hasExplicitHostName

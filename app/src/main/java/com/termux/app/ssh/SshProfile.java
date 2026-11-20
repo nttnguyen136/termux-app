@@ -91,6 +91,19 @@ public final class SshProfile {
         return id;
     }
 
+    @NonNull
+    public String formatEndpoint() {
+        String hostAndPort = port != DEFAULT_PORT ? host + ":" + port : host;
+        return username.isEmpty() ? hostAndPort : username + "@" + hostAndPort;
+    }
+
+    public boolean hasAdvancedValues() {
+        return !startupCommand.isEmpty()
+            || !proxyJump.isEmpty()
+            || keepAliveIntervalSeconds > 0
+            || !extraArgs.isEmpty();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

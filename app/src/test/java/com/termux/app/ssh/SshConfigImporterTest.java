@@ -198,4 +198,41 @@ public class SshConfigImporterTest {
         assertEquals("", legacy.getProfile().proxyJump);
         assertFalse(SshConfigImporter.isDuplicate(legacy.getProfile(), existingEndpoint));
     }
+
+    @Test
+    public void expandsMultiAliasHostBlockWhenHostNameContainsLowercasePercentHToken() {
+        File homeDir = tempFolder.getRoot();
+        String content =
+            "Host web1 *.ignored web2\n" +
+            "  HostName %h.internal\n" +
+            "  User www\n" +
+            "  Port 2202\n" +
+            "\n" +
+            "Host literal1 literal2\n" +
+            "  HostName %H.internal\n" +
+            "  User ops\n";
+
+        List<SshConfigImporter.ImportCandidate> candidates =
+            SshConfigImporter.parseContent(content, homeDir, Collections.emptyList());
+
+        assertEquals(3, candidates.size());
+
+        SshProfile web1 = candidates.get(0).getProfile();
+        assertEquals("web1", candidates.get(0).getAlias());
+        assertEquals("web1", web1.displayName);
+        assertEquals("web1.internal", web1.host);
+        assertEquals("www", web1.username);
+        assertEquals(2202, web1.port);
+
+        SshProfile web2 = candidates.get(1).getProfile();
+        assertEquals("web2", candidates.get(1).getAlias());
+        assertEquals("web2", web2.displayName);
+        assertEquals("web2.internal", web2.host);
+        assertEquals("www", web2.username);
+        assertEquals(2202, web2.port);
+
+        SshProfile literal = candidates.get(2).getProfile();
+        assertEquals("literal1", candidates.get(2).getAlias());
+        assertEquals("%H.internal", literal.host);
+    }
 }

@@ -115,6 +115,15 @@ public class SshAskPassManagerTest {
         assertEquals("line1", res.stdout);
         assertFalse(prepared.secretFile.exists());
         assertFalse(prepared.scriptFile.exists());
+
+        SshAskPassManager.PreparedAskPass byScriptPath = manager.createSingleUseHelper("by-path-secret");
+        assertTrue(byScriptPath.secretFile.isFile());
+        assertTrue(byScriptPath.scriptFile.isFile());
+        SshAskPassManager.cleanupFilesForScriptPath(null);
+        SshAskPassManager.cleanupFilesForScriptPath("");
+        SshAskPassManager.cleanupFilesForScriptPath(byScriptPath.scriptFile.getAbsolutePath());
+        assertFalse(byScriptPath.secretFile.exists());
+        assertFalse(byScriptPath.scriptFile.exists());
     }
 
     private static ExecResult runProcess(String[] cmd) throws Exception {

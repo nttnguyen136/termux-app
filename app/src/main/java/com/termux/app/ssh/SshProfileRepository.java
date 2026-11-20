@@ -84,11 +84,6 @@ public final class SshProfileRepository {
     }
 
     @NonNull
-    public SshCredentialStore getCredentialStore() {
-        return credentialStore;
-    }
-
-    @NonNull
     public List<SshProfile> getAllSorted() throws IOException {
         synchronized (lock) {
             return sortProfiles(loadProfilesLocked());
@@ -178,15 +173,6 @@ public final class SshProfileRepository {
         return credentialStore.getSecret(profileId);
     }
 
-    public void setSecret(@NonNull String profileId, @Nullable String secretPlaintext)
-        throws IOException, GeneralSecurityException {
-        credentialStore.saveSecret(profileId, secretPlaintext);
-    }
-
-    public boolean purgeSecret(@NonNull String profileId) {
-        return credentialStore.deleteSecret(profileId);
-    }
-
     @Nullable
     public SshProfile setPinned(@NonNull String profileId, boolean pinned) throws IOException {
         synchronized (lock) {
@@ -219,11 +205,6 @@ public final class SshProfileRepository {
             }
             return null;
         }
-    }
-
-    @Nullable
-    public SshProfile markUsedNow(@NonNull String profileId) throws IOException {
-        return markUsed(profileId, System.currentTimeMillis());
     }
 
     @NonNull

@@ -5,7 +5,6 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
-import android.system.Os;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -15,12 +14,10 @@ import com.termux.shared.shell.command.ExecutionCommand;
 import com.termux.shared.shell.command.result.ResultData;
 import com.termux.shared.shell.command.runner.app.AppShell;
 import com.termux.shared.termux.TermuxBootstrap;
-import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -46,27 +43,8 @@ public final class SshKeyManager {
     }
 
     @NonNull
-    public static File getDefaultPrefixDir() {
-        return new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
-    }
-
-    @NonNull
-    public static File getDefaultHomeDir() {
-        return new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
-    }
-
-    @NonNull
-    public static File getDefaultSshDir() {
-        return new File(getDefaultHomeDir(), ".ssh");
-    }
-
-    @NonNull
     public static File getSshKeygenBinary(@NonNull File prefixDir) {
         return new File(new File(prefixDir, "bin"), "ssh-keygen");
-    }
-
-    public static boolean isSshKeygenAvailable() {
-        return isSshKeygenAvailable(getDefaultPrefixDir());
     }
 
     public static boolean isSshKeygenAvailable(@NonNull File prefixDir) {
@@ -86,11 +64,6 @@ public final class SshKeyManager {
             return null;
         }
         return SshFsUtils.readUtf8(pubFile).trim();
-    }
-
-    @NonNull
-    public static List<File> scanPrivateKeys() {
-        return scanPrivateKeys(getDefaultSshDir());
     }
 
     @NonNull
@@ -116,13 +89,6 @@ public final class SshKeyManager {
             return a.getName().compareTo(b.getName());
         });
         return Collections.unmodifiableList(keys);
-    }
-
-    @NonNull
-    public static File importPrivateKey(
-            @NonNull Context context,
-            @NonNull Uri sourceUri) throws IOException {
-        return importPrivateKey(context, sourceUri, getDefaultSshDir());
     }
 
     @NonNull
@@ -196,7 +162,7 @@ public final class SshKeyManager {
                 throw new IOException("Unable to create SSH directory: " + sshDir.getAbsolutePath());
             }
             File targetFile = resolveCollisionFreeFile(sshDir, safeFilename, false);
-            writeNewFile0600(targetFile, content);
+            SshFsUtils.writeBytesAtomic0600(targetFile, content, false);
             return targetFile;
         }
     }
@@ -204,22 +170,6 @@ public final class SshKeyManager {
     @NonNull
     public static SshKeygenRunner createDefaultRunner(@NonNull Context context) {
         return new AppShellSshKeygenRunner(context);
-    }
-
-    @NonNull
-    public static SshKeyGenerationResult generateEd25519Key(
-            @NonNull Context context,
-            @Nullable String keyName,
-            @Nullable String passphrase,
-            @Nullable String comment) {
-        return generateEd25519Key(
-            getDefaultPrefixDir(),
-            getDefaultHomeDir(),
-            keyName,
-            passphrase,
-            comment,
-            createDefaultRunner(context)
-        );
     }
 
     @NonNull
@@ -243,102 +193,54 @@ public final class SshKeyManager {
         String safeKeyName = sanitizeKeyFilename(normalizedInput, DEFAULT_GENERATED_KEY_NAME);
 
         File sshDir = new File(homeDir, ".ssh");
-        File targetKeyFile;
         synchronized (KEY_FILE_LOCK) {
             if (!SshFsUtils.ensureDir0700(sshDir)) {
                 return SshKeyGenerationResult.failed("Unable to create SSH directory: " + sshDir.getAbsolutePath());
             }
-            targetKeyFile = resolveCollisionFreeFile(sshDir, safeKeyName, true);
-        }
+            File targetKeyFile = resolveCollisionFreeFile(sshDir, safeKeyName, true);
 
-        List<String> args = new ArrayList<>();
-        args.add("-t");
-        args.add("ed25519");
-        args.add("-f");
-        args.add(targetKeyFile.getAbsolutePath());
-        args.add("-N");
-        args.add(passphrase != null ? passphrase : "");
-        if (comment != null && !comment.trim().isEmpty()) {
-            args.add("-C");
-            args.add(comment.trim());
-        }
-
-        SshKeygenRunner.ExecutionResult execResult;
-        try {
-            execResult = runner.runSshKeygen(prefixDir, homeDir, sshKeygenBinary, Collections.unmodifiableList(args));
-        } catch (RuntimeException e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "ssh-keygen execution threw unexpected exception", e);
-            return SshKeyGenerationResult.failed(e.getMessage());
-        }
-
-        if (execResult == null || !execResult.isSuccess()) {
-            String msg = execResult != null ? execResult.getEffectiveErrorMessage() : "ssh-keygen returned no result";
-            return SshKeyGenerationResult.failed(msg);
-        }
-
-        File pubKeyFile = getPublicKeyFile(targetKeyFile);
-        if (!targetKeyFile.isFile() || !pubKeyFile.isFile()) {
-            return SshKeyGenerationResult.failed("Generated key files were not created on disk");
-        }
-
-        SshFsUtils.ensureDir0700(sshDir);
-        SshFsUtils.chmod0600(targetKeyFile);
-        chmod0644(pubKeyFile);
-
-        try {
-            String pubContent = SshFsUtils.readUtf8(pubKeyFile).trim();
-            if (pubContent.isEmpty()) {
-                return SshKeyGenerationResult.failed("Generated public key file is empty");
+            List<String> args = new ArrayList<>();
+            args.add("-t");
+            args.add("ed25519");
+            args.add("-f");
+            args.add(targetKeyFile.getAbsolutePath());
+            args.add("-N");
+            args.add(passphrase != null ? passphrase : "");
+            if (comment != null && !comment.trim().isEmpty()) {
+                args.add("-C");
+                args.add(comment.trim());
             }
-            return SshKeyGenerationResult.success(targetKeyFile, pubKeyFile, pubContent);
-        } catch (IOException e) {
-            return SshKeyGenerationResult.failed("Failed to read generated public key: " + e.getMessage());
-        }
-    }
 
-    private static void chmod0644(@NonNull File file) {
-        try {
-            //noinspection OctalInteger
-            Os.chmod(file.getAbsolutePath(), 0644);
-        } catch (Throwable ignored) {
-            // Host JVM fallback
-        }
-        try {
-            file.setReadable(false, false);
-            file.setWritable(false, false);
-            file.setExecutable(false, false);
-            file.setReadable(true, false);
-            file.setWritable(true, true);
-        } catch (Throwable ignored) {
-        }
-    }
+            SshKeygenRunner.ExecutionResult execResult;
+            try {
+                execResult = runner.runSshKeygen(prefixDir, homeDir, sshKeygenBinary, Collections.unmodifiableList(args));
+            } catch (RuntimeException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "ssh-keygen execution threw unexpected exception", e);
+                return SshKeyGenerationResult.failed(e.getMessage());
+            }
 
-    private static void writeNewFile0600(@NonNull File targetFile, @NonNull byte[] content) throws IOException {
-        File parent = targetFile.getParentFile();
-        File tempFile = new File(parent, "." + targetFile.getName() + "." + UUID.randomUUID() + ".tmp");
-        boolean moved = false;
-        try {
-            if (!tempFile.createNewFile()) {
-                throw new IOException("Unable to create temp key file: " + tempFile.getAbsolutePath());
+            if (execResult == null || !execResult.isSuccess()) {
+                String msg = execResult != null ? execResult.getEffectiveErrorMessage() : "ssh-keygen returned no result";
+                return SshKeyGenerationResult.failed(msg);
             }
-            SshFsUtils.chmod0600(tempFile);
-            try (FileOutputStream out = new FileOutputStream(tempFile, false)) {
-                out.write(content);
-                out.getFD().sync();
+
+            File pubKeyFile = getPublicKeyFile(targetKeyFile);
+            if (!targetKeyFile.isFile() || !pubKeyFile.isFile()) {
+                return SshKeyGenerationResult.failed("Generated key files were not created on disk");
             }
-            SshFsUtils.chmod0600(tempFile);
-            if (targetFile.exists()) {
-                throw new IOException("Target SSH key already exists: " + targetFile.getAbsolutePath());
-            }
-            if (!tempFile.renameTo(targetFile)) {
-                throw new IOException("Unable to move imported SSH key to: " + targetFile.getAbsolutePath());
-            }
-            SshFsUtils.chmod0600(targetFile);
-            moved = true;
-        } finally {
-            if (!moved && tempFile.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                tempFile.delete();
+
+            SshFsUtils.ensureDir0700(sshDir);
+            SshFsUtils.chmod0600(targetKeyFile);
+            SshFsUtils.chmod0644(pubKeyFile);
+
+            try {
+                String pubContent = SshFsUtils.readUtf8(pubKeyFile).trim();
+                if (pubContent.isEmpty()) {
+                    return SshKeyGenerationResult.failed("Generated public key file is empty");
+                }
+                return SshKeyGenerationResult.success(targetKeyFile, pubKeyFile, pubContent);
+            } catch (IOException e) {
+                return SshKeyGenerationResult.failed("Failed to read generated public key: " + e.getMessage());
             }
         }
     }

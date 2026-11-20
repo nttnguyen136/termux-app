@@ -11,8 +11,6 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.Window;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -71,6 +69,7 @@ public class SshHostsActivity extends AppCompatActivity {
     @NonNull private String currentQuery = "";
     private ActivityResultLauncher<String[]> safOpenDocumentLauncher;
     @Nullable private SafImportCallback pendingSafImportCallback;
+    private boolean launchInProgress = false;
 
     private View rootView;
     private View searchContainer;
@@ -340,7 +339,7 @@ public class SshHostsActivity extends AppCompatActivity {
         displayNameView.setText(profile.getEffectiveDisplayName());
         displayNameView.setTextColor(palette.onSurface);
 
-        endpointView.setText(formatEndpoint(profile));
+        endpointView.setText(profile.formatEndpoint());
         endpointView.setTextColor(palette.onSurfaceVariant);
 
         if (profile.pinned) {
@@ -396,7 +395,18 @@ public class SshHostsActivity extends AppCompatActivity {
     }
 
     private void connectToProfile(@NonNull SshProfile profile) {
+        if (launchInProgress) {
+            return;
+        }
+        launchInProgress = true;
         connectionLauncher.connect(profile, outcome -> {
+            if (outcome.status == SshConnectionLauncher.LaunchStatus.PENDING) {
+                return;
+            }
+            launchInProgress = false;
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
             if (outcome.status == SshConnectionLauncher.LaunchStatus.LAUNCHED) {
                 finish();
             } else if (outcome.status == SshConnectionLauncher.LaunchStatus.LAUNCH_FAILED) {
@@ -441,50 +451,12 @@ public class SshHostsActivity extends AppCompatActivity {
             })
             .setNegativeButton(android.R.string.cancel, null)
             .create();
-        dialog.setOnShowListener(d -> styleAlertDialog(dialog, palette, palette.error));
-        dialog.show();
-        styleAlertDialog(dialog, palette, palette.error);
+        SshDialogStyler.showStyledDialog(this, dialog, palette, palette.error);
     }
 
     @NonNull
     TermuxColorPalette getCurrentPalette() {
         return activePalette != null ? activePalette : TermuxThemeManager.getActivePalette(this);
-    }
-
-    static void styleAlertDialog(
-            @NonNull AlertDialog dialog,
-            @NonNull TermuxColorPalette palette,
-            int positiveButtonColor) {
-        float density = dialog.getContext().getResources().getDisplayMetrics().density;
-        Window window = dialog.getWindow();
-        if (window != null) {
-            GradientDrawable windowBg = new GradientDrawable();
-            windowBg.setShape(GradientDrawable.RECTANGLE);
-            windowBg.setCornerRadius(24f * density);
-            windowBg.setColor(palette.surfaceContainerHigh);
-            window.setBackgroundDrawable(windowBg);
-        }
-        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (positive != null) {
-            positive.setTextColor(positiveButtonColor);
-        }
-        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-        if (negative != null) {
-            negative.setTextColor(palette.onSurfaceVariant);
-        }
-        Button neutral = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
-        if (neutral != null) {
-            neutral.setTextColor(palette.accent);
-        }
-    }
-
-    @NonNull
-    private static String formatEndpoint(@NonNull SshProfile profile) {
-        String base = profile.username + "@" + profile.host;
-        if (profile.port != SshProfile.DEFAULT_PORT) {
-            return base + ":" + profile.port;
-        }
-        return base;
     }
 
     @NonNull

@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -67,17 +68,22 @@ final class SshKeyToolsHelper {
             activity, environment, palette, density, listContainer, emptyView);
         refreshList.run();
 
-        importBtn.setOnClickListener(v -> activity.launchSafKeyImport(imported -> refreshList.run()));
-        generateBtn.setOnClickListener(v ->
-            startEd25519KeyGeneration(activity, environment, palette, result -> refreshList.run()));
-
         AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
             .setView(view)
             .setNegativeButton(R.string.ssh_key_tools_close, null)
             .create();
-        dialog.setOnShowListener(d -> SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent));
-        dialog.show();
-        SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent);
+        importBtn.setOnClickListener(v -> activity.launchSafKeyImport(imported -> {
+            if (!activity.isFinishing() && !activity.isDestroyed() && dialog.isShowing()) {
+                refreshList.run();
+            }
+        }));
+        generateBtn.setOnClickListener(v ->
+            startEd25519KeyGeneration(activity, environment, palette, result -> {
+                if (!activity.isFinishing() && !activity.isDestroyed() && dialog.isShowing()) {
+                    refreshList.run();
+                }
+            }));
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
     }
 
     private static void populateKeyToolsList(
@@ -160,9 +166,7 @@ final class SshKeyToolsHelper {
             })
             .setNegativeButton(android.R.string.cancel, null)
             .create();
-        dialog.setOnShowListener(d -> SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent));
-        dialog.show();
-        SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent);
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
     }
 
     private static void showGenerateEd25519Dialog(
@@ -192,50 +196,84 @@ final class SshKeyToolsHelper {
             .setPositiveButton(R.string.ssh_keygen_generate_cta, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create();
-        dialog.setOnShowListener(d -> SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent));
-        dialog.show();
-        SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent);
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
 
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        Button generateButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button cancelButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        generateButton.setOnClickListener(v -> {
             String keyName = nameInput.getText() != null ? nameInput.getText().toString().trim() : "";
             String passphrase = passphraseInput.getText() != null ? passphraseInput.getText().toString() : "";
             String comment = commentInput.getText() != null ? commentInput.getText().toString().trim() : "";
 
-            SshKeyGenerationResult result = SshKeyManager.generateEd25519Key(
-                environment.prefixDir,
-                environment.homeDir,
-                keyName,
-                passphrase,
-                comment,
-                environment.keygenRunner
-            );
-            if (result.isMissingOpenssh()) {
-                dialog.dismiss();
-                showMissingOpenSshForKeygenDialog(activity, environment, palette);
-                return;
-            }
-            if (!result.isSuccess()) {
-                String error = result.getErrorMessage() != null
-                    ? result.getErrorMessage()
-                    : activity.getString(R.string.ssh_keygen_unknown_error);
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.ssh_keys_generate_failed, error),
-                    Toast.LENGTH_LONG
-                ).show();
-                return;
-            }
+            setKeygenDialogEnabled(dialog, generateButton, cancelButton, nameInput, passphraseInput, commentInput, false);
 
-            dialog.dismiss();
-            if (result.getPrivateKeyFile() != null) {
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.ssh_keys_generate_success, result.getPrivateKeyFile().getName()),
-                    Toast.LENGTH_SHORT
-                ).show();
-            }
-            onSuccess.onKeyGenerated(result);
+            environment.keygenExecutor.execute(() -> {
+                SshKeyGenerationResult result = SshKeyManager.generateEd25519Key(
+                    environment.prefixDir,
+                    environment.homeDir,
+                    keyName,
+                    passphrase,
+                    comment,
+                    environment.keygenRunner
+                );
+                activity.runOnUiThread(() -> {
+                    if (activity.isFinishing() || activity.isDestroyed()) {
+                        return;
+                    }
+                    setKeygenDialogEnabled(dialog, generateButton, cancelButton, nameInput, passphraseInput, commentInput, true);
+                    if (result.isMissingOpenssh()) {
+                        if (dialog.isShowing()) {
+                            dialog.dismiss();
+                        }
+                        showMissingOpenSshForKeygenDialog(activity, environment, palette);
+                        return;
+                    }
+                    if (!result.isSuccess()) {
+                        String error = result.getErrorMessage() != null
+                            ? result.getErrorMessage()
+                            : activity.getString(R.string.ssh_keygen_unknown_error);
+                        Toast.makeText(
+                            activity,
+                            activity.getString(R.string.ssh_keys_generate_failed, error),
+                            Toast.LENGTH_LONG
+                        ).show();
+                        return;
+                    }
+
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    if (result.getPrivateKeyFile() != null) {
+                        Toast.makeText(
+                            activity,
+                            activity.getString(R.string.ssh_keys_generate_success, result.getPrivateKeyFile().getName()),
+                            Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                    onSuccess.onKeyGenerated(result);
+                });
+            });
         });
+    }
+
+    private static void setKeygenDialogEnabled(
+            @NonNull AlertDialog dialog,
+            @Nullable Button generateButton,
+            @Nullable Button cancelButton,
+            @NonNull EditText nameInput,
+            @NonNull EditText passphraseInput,
+            @NonNull EditText commentInput,
+            boolean enabled) {
+        dialog.setCancelable(enabled);
+        if (generateButton != null) {
+            generateButton.setEnabled(enabled);
+        }
+        if (cancelButton != null) {
+            cancelButton.setEnabled(enabled);
+        }
+        nameInput.setEnabled(enabled);
+        passphraseInput.setEnabled(enabled);
+        commentInput.setEnabled(enabled);
     }
 
     @Nullable

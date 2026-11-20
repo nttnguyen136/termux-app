@@ -57,9 +57,7 @@ import android.graphics.Typeface;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.termux.app.ssh.SshConnectionLauncher;
 import com.termux.app.ssh.SshDrawerCoordinator;
-import com.termux.app.ssh.SshProfileRepository;
 import com.termux.app.terminal.TerminalActionsBottomSheet;
 import com.termux.app.terminal.TermuxTopTabBarController;
 import com.termux.shared.termux.theme.TermuxAppearanceAware;
@@ -1305,26 +1303,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             @Nullable SshDrawerCoordinator.DependenciesFactory factory) {
         sSshDrawerDependencyFactoryForTests = factory;
     }
-
-    @VisibleForTesting
-    public void setSshDrawerCoordinatorForTesting(
-            @NonNull SshProfileRepository repository,
-            @NonNull SshConnectionLauncher connectionLauncher) {
-        SshDrawerCoordinator.Dependencies deps =
-            new SshDrawerCoordinator.Dependencies(repository, connectionLauncher);
-        if (mSshDrawerCoordinator == null) {
-            mSshDrawerCoordinator = new SshDrawerCoordinator(this, deps);
-        } else {
-            mSshDrawerCoordinator.setDependencies(deps);
-        }
-        mSshDrawerCoordinator.refreshHosts();
-        mSshDrawerCoordinator.applyAppearance(
-            TermuxThemeManager.getActivePalette(this),
-            TermuxFontManager.getActiveTypeface(this)
-        );
-    }
-
-
 
     public static void startTermuxActivity(@NonNull final Context context) {
         ActivityUtils.startActivity(context, newInstance(context));

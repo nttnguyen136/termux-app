@@ -48,4 +48,32 @@ public class SshProfileTest {
         assertEquals("Production Web", named.getEffectiveDisplayName());
         assertTrue(named.pinned);
     }
+
+    @Test
+    public void formatEndpointAndHasAdvancedValuesBehaveCorrectly() {
+        SshProfile defaultPort = SshProfile.builder()
+            .host("web.internal")
+            .username("deploy")
+            .build();
+        assertEquals("deploy@web.internal", defaultPort.formatEndpoint());
+        assertFalse(defaultPort.hasAdvancedValues());
+
+        SshProfile customPortNoUser = SshProfile.builder()
+            .host("web.internal")
+            .port(2222)
+            .build();
+        assertEquals("web.internal:2222", customPortNoUser.formatEndpoint());
+
+        SshProfile customPortWithUser = SshProfile.builder()
+            .host("web.internal")
+            .port(2222)
+            .username("ops")
+            .build();
+        assertEquals("ops@web.internal:2222", customPortWithUser.formatEndpoint());
+
+        assertTrue(defaultPort.toBuilder().startupCommand("htop").build().hasAdvancedValues());
+        assertTrue(defaultPort.toBuilder().proxyJump("bastion").build().hasAdvancedValues());
+        assertTrue(defaultPort.toBuilder().keepAliveIntervalSeconds(30).build().hasAdvancedValues());
+        assertTrue(defaultPort.toBuilder().extraArgs("-A").build().hasAdvancedValues());
+    }
 }
