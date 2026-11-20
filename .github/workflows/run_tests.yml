@@ -21,6 +21,7 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
+    - name: Run UI guardrails
+      run: ./scripts/check-ui-guardrails.sh
     - name: Execute tests
-      run: |
-        ./gradlew test
+      run: ./gradlew test
