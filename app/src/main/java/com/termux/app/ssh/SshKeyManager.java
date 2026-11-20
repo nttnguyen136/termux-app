@@ -202,6 +202,11 @@ public final class SshKeyManager {
     }
 
     @NonNull
+    public static SshKeygenRunner createDefaultRunner(@NonNull Context context) {
+        return new AppShellSshKeygenRunner(context);
+    }
+
+    @NonNull
     public static SshKeyGenerationResult generateEd25519Key(
             @NonNull Context context,
             @Nullable String keyName,
@@ -213,7 +218,7 @@ public final class SshKeyManager {
             keyName,
             passphrase,
             comment,
-            new AppShellSshKeygenRunner(context)
+            createDefaultRunner(context)
         );
     }
 
