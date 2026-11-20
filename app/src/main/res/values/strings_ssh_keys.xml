@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SSH Key Discovery, SAF Import, Ed25519 Generation & ~/.ssh/config Import -->
+    <string name="ssh_keys_section_title">SSH Keys</string>
+    <string name="ssh_keys_import_action">Import Private Key</string>
+    <string name="ssh_keys_generate_ed25519_action">Generate Ed25519 Key</string>
+    <string name="ssh_keys_copy_public_key_action">Copy Public Key</string>
+    <string name="ssh_keys_public_key_copied">Public key copied to clipboard</string>
+    <string name="ssh_keys_import_success">Imported key as %1$s</string>
+    <string name="ssh_keys_import_error_empty">Selected SSH key file is empty</string>
+    <string name="ssh_keys_import_error_unreadable">Unable to read selected SSH key file</string>
+    <string name="ssh_keys_generate_success">Generated %1$s</string>
+    <string name="ssh_keys_generate_missing_openssh_title">OpenSSH Not Installed</string>
+    <string name="ssh_keys_generate_missing_openssh_message">Generating an Ed25519 key requires OpenSSH (ssh-keygen). Install the openssh package in Termux?</string>
+    <string name="ssh_keys_generate_failed">Failed to generate Ed25519 key: %1$s</string>
+
+    <string name="ssh_config_import_title">Import from ~/.ssh/config</string>
+    <string name="ssh_config_import_empty">No importable hosts found in ~/.ssh/config</string>
+    <string name="ssh_config_import_duplicate_badge">Already saved</string>
+    <string name="ssh_config_import_missing_username_hint">Username required</string>
+</resources>
