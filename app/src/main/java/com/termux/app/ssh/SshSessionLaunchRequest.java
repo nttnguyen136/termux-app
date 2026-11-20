@@ -39,9 +39,4 @@ public final class SshSessionLaunchRequest {
     public String[] getArgumentsArray() {
         return arguments.toArray(new String[0]);
     }
-
-    @Nullable
-    public HashMap<String, String> getAdditionalEnvironmentCopyOrNull() {
-        return additionalEnvironment.isEmpty() ? null : new HashMap<>(additionalEnvironment);
-    }
 }

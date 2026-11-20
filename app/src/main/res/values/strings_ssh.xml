@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- SSH Drawer & Bottom Sheet Shortcut -->
+    <string name="action_open_ssh_hosts">SSH Hosts</string>
+    <string name="drawer_ssh_hosts_title">SSH Hosts</string>
+    <string name="drawer_ssh_hosts_manage">Manage / Add</string>
+    <string name="drawer_ssh_hosts_empty">No saved SSH hosts yet. Tap Manage / Add to add one.</string>
+
+    <!-- SSH Session Launch & OpenSSH Pre-flight -->
+    <string name="ssh_missing_openssh_title">Install OpenSSH?</string>
+    <string name="ssh_missing_openssh_message">OpenSSH (%1$s) is not installed yet. Install the openssh package and connect to "%2$s" automatically once installation succeeds?</string>
+    <string name="ssh_missing_openssh_command_preview">pkg install -y openssh</string>
+    <string name="ssh_missing_openssh_install_and_connect">Install &amp; Connect</string>
+    <string name="ssh_launch_error_title">Unable to Start SSH Session</string>
+    <string name="ssh_launch_error_credential">Could not decrypt saved credentials for this SSH host. Re-save the password or passphrase and try again.</string>
+    <string name="ssh_launch_error_session">Could not start a new terminal session for this SSH host.</string>
+    <string name="ssh_launch_error_max_sessions">Close an existing terminal session before opening a new SSH connection.</string>
+
+    <!-- SSH Hosts Manager Screen & Profile Form -->
     <string name="title_activity_ssh_hosts">SSH Hosts</string>
     <string name="ssh_search_hint">Search by name, host, or user</string>
     <string name="ssh_search_clear">Clear search</string>
@@ -62,6 +79,19 @@
     <string name="ssh_form_extra_args_hint">e.g. -A -C</string>
     <string name="ssh_form_error_keep_alive_invalid">KeepAlive interval must be a non-negative integer</string>
 
+    <!-- SSH Key Discovery, SAF Import, Ed25519 Generation & ~/.ssh/config Import -->
+    <string name="ssh_keys_section_title">SSH Keys</string>
+    <string name="ssh_keys_import_action">Import Private Key</string>
+    <string name="ssh_keys_generate_ed25519_action">Generate Ed25519 Key</string>
+    <string name="ssh_keys_copy_public_key_action">Copy Public Key</string>
+    <string name="ssh_keys_public_key_copied">Public key copied to clipboard</string>
+    <string name="ssh_keys_import_success">Imported key as %1$s</string>
+    <string name="ssh_keys_import_error_empty">Selected SSH key file is empty</string>
+    <string name="ssh_keys_import_error_unreadable">Unable to read selected SSH key file</string>
+    <string name="ssh_keys_generate_success">Generated %1$s</string>
+    <string name="ssh_keys_generate_missing_openssh_title">OpenSSH Not Installed</string>
+    <string name="ssh_keys_generate_missing_openssh_message">Generating an Ed25519 key requires OpenSSH (ssh-keygen). Install the openssh package in Termux?</string>
+    <string name="ssh_keys_generate_failed">Failed to generate Ed25519 key: %1$s</string>
     <string name="ssh_keys_install_openssh_confirm">Install OpenSSH</string>
     <string name="ssh_keys_install_openssh_session_title">Install OpenSSH</string>
     <string name="ssh_keygen_dialog_title">Generate Ed25519 Key</string>
@@ -75,6 +105,10 @@
     <string name="ssh_key_tools_empty">No private keys found in ~/.ssh yet.</string>
     <string name="ssh_key_tools_close">Close</string>
 
+    <string name="ssh_config_import_title">Import from ~/.ssh/config</string>
+    <string name="ssh_config_import_empty">No importable hosts found in ~/.ssh/config</string>
+    <string name="ssh_config_import_duplicate_badge">Already saved</string>
+    <string name="ssh_config_import_missing_username_hint">Username required</string>
     <string name="ssh_config_import_subtitle">Read-only import from ~/.ssh/config. Your config file will not be modified.</string>
     <string name="ssh_config_import_confirm">Import Selected</string>
     <string name="ssh_config_import_username_hint">Enter username</string>

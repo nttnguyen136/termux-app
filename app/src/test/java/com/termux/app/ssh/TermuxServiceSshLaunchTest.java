@@ -55,7 +55,7 @@ public class TermuxServiceSshLaunchTest {
             manager.mTermuxTasks.clear();
         }
         Application app = RuntimeEnvironment.getApplication();
-        resetAppearanceState(app);
+        SshTestAppearanceHelper.resetGlobalAppearanceState(app);
         TermuxAppSharedPreferences prefs = TermuxAppSharedPreferences.build(app);
         if (prefs != null) {
             prefs.setCurrentSession(null);
@@ -76,35 +76,30 @@ public class TermuxServiceSshLaunchTest {
         if (prefs != null) {
             prefs.setCurrentSession(null);
         }
-        resetAppearanceState(app);
-    }
-
-    private static void resetAppearanceState(Application app) {
-        if (com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(app) != null) {
-            com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(app)
-                .edit().clear().commit();
-        }
-        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
-        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
+        SshTestAppearanceHelper.resetGlobalAppearanceState(app);
     }
 
     @Test
     public void createTermuxSession_forwardsAdditionalEnvironmentAndSessionNameToTerminalSession()
         throws Exception {
-        HashMap<String, String> extraEnv = new HashMap<>();
+        java.util.Map<String, String> extraEnv = new HashMap<>();
         extraEnv.put("SSH_ASKPASS", "/tmp/askpass-test.sh");
         extraEnv.put("SSH_ASKPASS_REQUIRE", "force");
         extraEnv.put("DISPLAY", ":0");
 
-        TermuxSession termuxSession = service.createTermuxSession(
-            "/data/data/com.termux/files/usr/bin/ssh",
-            new String[]{"-p", "2222", "deploy@prod.example.com"},
-            null,
-            "/data/data/com.termux/files/home",
-            false,
-            "Prod Web",
-            extraEnv
-        );
+        com.termux.shared.shell.command.ExecutionCommand executionCommand =
+            new com.termux.shared.shell.command.ExecutionCommand(
+                TermuxShellManager.getNextShellId(),
+                "/data/data/com.termux/files/usr/bin/ssh",
+                new String[]{"-p", "2222", "deploy@prod.example.com"},
+                null,
+                "/data/data/com.termux/files/home",
+                com.termux.shared.shell.command.ExecutionCommand.Runner.TERMINAL_SESSION.getName(),
+                false
+            );
+        executionCommand.shellName = "Prod Web";
+
+        TermuxSession termuxSession = service.createTermuxSession(executionCommand, extraEnv);
 
         assertNotNull(termuxSession);
         assertEquals(1, service.getTermuxSessionsSize());

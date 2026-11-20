@@ -235,4 +235,71 @@ public class SshConfigImporterTest {
         assertEquals("literal1", candidates.get(2).getAlias());
         assertEquals("%H.internal", literal.host);
     }
+
+    @Test
+    public void inheritsWildcardAndGlobalHostStarDefaultsWithoutEmittingWildcards() {
+        File homeDir = tempFolder.getRoot();
+        String content =
+            "Host *\n" +
+            "  ServerAliveInterval 45\n" +
+            "  User top_default_user\n" +
+            "\n" +
+            "Host app-*\n" +
+            "  User app_deploy\n" +
+            "  ProxyJump app-bastion.internal\n" +
+            "\n" +
+            "Host app-1\n" +
+            "  HostName 10.0.1.10\n" +
+            "\n" +
+            "Host app-custom\n" +
+            "  HostName 10.0.1.20\n" +
+            "  User override_user\n" +
+            "  Port 2222\n" +
+            "  ServerAliveInterval 15\n" +
+            "\n" +
+            "Host password-box\n" +
+            "  HostName 10.0.2.30\n" +
+            "  PubkeyAuthentication no\n" +
+            "\n" +
+            "Host * !app-1\n" +
+            "  Port 2200\n" +
+            "\n" +
+            "Host *\n" +
+            "  User bottom_default_user\n" +
+            "  IdentityFile ~/.ssh/id_fallback\n";
+
+        List<SshConfigImporter.ImportCandidate> candidates =
+            SshConfigImporter.parseContent(content, homeDir, Collections.emptyList());
+
+        // Only concrete hosts are emitted; Host *, Host app-*, and Host * !app-1 are never standalone candidates.
+        assertEquals(3, candidates.size());
+
+        // app-1: inherits User/ProxyJump from app-*, ServerAliveInterval from Host *, IdentityFile from bottom Host *,
+        // and skips Port 2200 due to !app-1 negation (stays default 22).
+        SshProfile app1 = candidates.get(0).getProfile();
+        assertEquals("app-1", app1.displayName);
+        assertEquals("10.0.1.10", app1.host);
+        assertEquals("app_deploy", app1.username);
+        assertEquals("app-bastion.internal", app1.proxyJump);
+        assertEquals(SshProfile.DEFAULT_PORT, app1.port);
+        assertEquals(45, app1.keepAliveIntervalSeconds);
+        assertEquals(new File(homeDir, ".ssh/id_fallback").getAbsolutePath(), app1.privateKeyPath);
+        assertEquals(SshAuthType.SSH_KEY, app1.authType);
+
+        // app-custom: keeps explicit User/Port/ServerAliveInterval while inheriting ProxyJump & IdentityFile.
+        SshProfile appCustom = candidates.get(1).getProfile();
+        assertEquals("override_user", appCustom.username);
+        assertEquals(2222, appCustom.port);
+        assertEquals(15, appCustom.keepAliveIntervalSeconds);
+        assertEquals("app-bastion.internal", appCustom.proxyJump);
+        assertEquals(new File(homeDir, ".ssh/id_fallback").getAbsolutePath(), appCustom.privateKeyPath);
+
+        // password-box: inherits User from top Host *, Port 2200 from Host * !app-1, and switches to PASSWORD on PubkeyAuthentication no.
+        SshProfile passwordBox = candidates.get(2).getProfile();
+        assertEquals("top_default_user", passwordBox.username);
+        assertEquals(2200, passwordBox.port);
+        assertEquals(45, passwordBox.keepAliveIntervalSeconds);
+        assertEquals(SshAuthType.PASSWORD, passwordBox.authType);
+        assertEquals("", passwordBox.privateKeyPath);
+    }
 }

@@ -580,57 +580,24 @@ final class SshProfileFormDialog {
     private void attemptSave() {
         clearAllErrors();
 
-        String rawPort = portInput.getText() != null ? portInput.getText().toString().trim() : "";
-        int parsedPort;
-        if (rawPort.isEmpty()) {
-            parsedPort = 0;
-        } else {
-            try {
-                parsedPort = Integer.parseInt(rawPort);
-            } catch (NumberFormatException e) {
-                parsedPort = -1;
-            }
-        }
-
-        String rawKeepAlive = keepAliveInput.getText() != null ? keepAliveInput.getText().toString().trim() : "";
-        int parsedKeepAlive = 0;
-        boolean invalidKeepAliveFormat = false;
-        if (!rawKeepAlive.isEmpty()) {
-            try {
-                parsedKeepAlive = Integer.parseInt(rawKeepAlive);
-            } catch (NumberFormatException e) {
-                parsedKeepAlive = -1;
-                invalidKeepAliveFormat = true;
-            }
-        }
-
-        String extraArgs = extraArgsInput.getText() != null ? extraArgsInput.getText().toString().trim() : "";
-        String extraArgsError = null;
-        try {
-            SshCommandBuilder.parseExtraArgs(extraArgs);
-        } catch (IllegalArgumentException e) {
-            extraArgsError = e.getMessage();
-        }
-
-        SshProfile.Builder builder = existingProfile != null ? existingProfile.toBuilder() : SshProfile.builder();
-        SshProfile candidate = builder
-            .displayName(displayNameInput.getText() != null ? displayNameInput.getText().toString() : "")
-            .host(hostInput.getText() != null ? hostInput.getText().toString() : "")
-            .port(parsedPort)
-            .username(usernameInput.getText() != null ? usernameInput.getText().toString() : "")
-            .authType(selectedAuthType)
-            .privateKeyPath(selectedAuthType == SshAuthType.SSH_KEY ? selectedKeyPath : "")
-            .startupCommand(startupCommandInput.getText() != null ? startupCommandInput.getText().toString() : "")
-            .proxyJump(proxyJumpInput.getText() != null ? proxyJumpInput.getText().toString() : "")
-            .keepAliveIntervalSeconds(parsedKeepAlive)
-            .extraArgs(extraArgs)
-            .build();
-
-        SshValidationResult validation = SshProfileValidator.validate(candidate);
-        if (!validation.isValid() || extraArgsError != null) {
-            showValidationErrors(validation, invalidKeepAliveFormat, extraArgsError);
+        SshProfileDraft.ParsedForm parsed = SshProfileDraft.parseAndValidate(
+            existingProfile,
+            displayNameInput.getText() != null ? displayNameInput.getText().toString() : "",
+            hostInput.getText() != null ? hostInput.getText().toString() : "",
+            portInput.getText() != null ? portInput.getText().toString() : "",
+            usernameInput.getText() != null ? usernameInput.getText().toString() : "",
+            selectedAuthType,
+            selectedKeyPath,
+            startupCommandInput.getText() != null ? startupCommandInput.getText().toString() : "",
+            proxyJumpInput.getText() != null ? proxyJumpInput.getText().toString() : "",
+            keepAliveInput.getText() != null ? keepAliveInput.getText().toString() : "",
+            extraArgsInput.getText() != null ? extraArgsInput.getText().toString() : ""
+        );
+        if (!parsed.isValid()) {
+            showValidationErrors(parsed.validation, parsed.invalidKeepAliveFormat, parsed.extraArgsError);
             return;
         }
+        SshProfile candidate = parsed.profile;
 
         String enteredSecret = secretInput.getText() != null ? secretInput.getText().toString() : "";
         try {

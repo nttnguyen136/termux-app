@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="action_open_ssh_hosts">SSH Hosts</string>
-    <string name="drawer_ssh_hosts_title">SSH Hosts</string>
-    <string name="drawer_ssh_hosts_manage">Manage / Add</string>
-    <string name="drawer_ssh_hosts_empty">No saved SSH hosts yet. Tap Manage / Add to add one.</string>
-</resources>

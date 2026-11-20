@@ -26,15 +26,13 @@ public class SshConnectionLauncherTest {
     public final TemporaryFolder tempFolder = new TemporaryFolder();
 
     @org.junit.Before
+    public void setUpAppearanceState() {
+        SshTestAppearanceHelper.resetGlobalAppearanceState(org.robolectric.RuntimeEnvironment.getApplication());
+    }
+
     @org.junit.After
-    public void resetAppearancePreferences() {
-        android.content.Context context = org.robolectric.RuntimeEnvironment.getApplication();
-        if (com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(context) != null) {
-            com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(context)
-                .edit().clear().commit();
-        }
-        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
-        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
+    public void tearDownAppearanceState() {
+        SshTestAppearanceHelper.resetGlobalAppearanceState(org.robolectric.RuntimeEnvironment.getApplication());
     }
 
     @Test

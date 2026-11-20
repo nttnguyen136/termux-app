@@ -17,6 +17,8 @@ import com.termux.app.TermuxActivity;
 import com.termux.app.TermuxService;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
 import com.termux.shared.activity.ActivityUtils;
+import com.termux.shared.shell.command.ExecutionCommand;
+import com.termux.shared.termux.shell.TermuxShellManager;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.shared.termux.theme.TermuxThemeManager;
 
@@ -87,15 +89,17 @@ public final class TermuxSshSessionLaunchGateway implements SshSessionLaunchGate
     private static TermuxSession defaultCreateSession(
             @NonNull TermuxService service,
             @NonNull SshSessionLaunchRequest request) {
-        return service.createTermuxSession(
+        ExecutionCommand executionCommand = new ExecutionCommand(
+            TermuxShellManager.getNextShellId(),
             request.executablePath,
             request.getArgumentsArray(),
             null,
             request.workingDirectory,
-            false,
-            request.sessionTitle,
-            request.getAdditionalEnvironmentCopyOrNull()
+            ExecutionCommand.Runner.TERMINAL_SESSION.getName(),
+            false
         );
+        executionCommand.shellName = request.sessionTitle;
+        return service.createTermuxSession(executionCommand, request.additionalEnvironment);
     }
 
     @Override

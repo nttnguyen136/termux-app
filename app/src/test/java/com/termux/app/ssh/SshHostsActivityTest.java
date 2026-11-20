@@ -59,7 +59,7 @@ public class SshHostsActivityTest {
     @Before
     public void setUp() throws Exception {
         appContext = RuntimeEnvironment.getApplication();
-        resetGlobalAppearanceState(appContext);
+        SshTestAppearanceHelper.resetGlobalAppearanceState(appContext);
         TermuxThemeManager.setSelectedThemeId(appContext, TermuxColorPalette.THEME_CATPPUCCIN_MOCHA);
 
         prefixDir = tempFolder.newFolder("prefix");
@@ -91,15 +91,7 @@ public class SshHostsActivityTest {
     @After
     public void tearDown() {
         SshHostsActivity.setEnvironmentFactoryForTests(null);
-        resetGlobalAppearanceState(appContext);
-    }
-
-    private static void resetGlobalAppearanceState(Context context) {
-        if (TermuxAppearancePreferences.getPreferences(context) != null) {
-            TermuxAppearancePreferences.getPreferences(context).edit().clear().commit();
-        }
-        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
-        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
+        SshTestAppearanceHelper.resetGlobalAppearanceState(appContext);
     }
 
     @Test
@@ -1002,6 +994,52 @@ public class SshHostsActivityTest {
                 originalConfig,
                 new String(java.nio.file.Files.readAllBytes(sshConfig.toPath()), java.nio.charset.StandardCharsets.UTF_8)
             );
+        }
+    }
+
+    @Test
+    public void configImportDialogInheritsHostStarUserDefaultsAndImportsValidProfile() throws Exception {
+        File dotSsh = new File(homeDir, ".ssh");
+        assertTrue(dotSsh.mkdirs());
+        File sshConfig = new File(dotSsh, "config");
+        String config =
+            "Host inherited-box\n" +
+            "  HostName app.internal\n\n" +
+            "Host *\n" +
+            "  User globalops\n" +
+            "  Port 2220\n" +
+            "  ServerAliveInterval 45\n";
+        java.nio.file.Files.write(sshConfig.toPath(), config.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        try (ActivityController<SshHostsActivity> controller =
+                 Robolectric.buildActivity(SshHostsActivity.class, SshHostsActivity.createIntent(appContext))) {
+            SshHostsActivity activity = controller.create().start().resume().get();
+
+            activity.findViewById(R.id.ssh_action_import_config).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+            androidx.appcompat.app.AlertDialog importDialog =
+                (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            assertNotNull(importDialog);
+            assertTrue(importDialog.isShowing());
+
+            android.widget.LinearLayout importList = importDialog.findViewById(R.id.ssh_config_import_list);
+            assertEquals(1, importList.getChildCount());
+            View row = importList.getChildAt(0);
+            assertEquals(View.GONE, row.findViewById(R.id.ssh_import_candidate_missing_user_hint).getVisibility());
+            assertTrue(((android.widget.CheckBox) row.findViewById(R.id.ssh_import_candidate_checkbox)).isChecked());
+
+            importDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            assertFalse(importDialog.isShowing());
+
+            List<SshProfile> saved = repository.getAllSorted();
+            assertEquals(1, saved.size());
+            assertEquals("inherited-box", saved.get(0).displayName);
+            assertEquals("app.internal", saved.get(0).host);
+            assertEquals("globalops", saved.get(0).username);
+            assertEquals(2220, saved.get(0).port);
+            assertEquals(45, saved.get(0).keepAliveIntervalSeconds);
         }
     }
 

@@ -67,7 +67,9 @@ public final class SshConfigImporter {
     }
 
     private static final class HostBlockBuilder {
-        final List<String> aliases;
+        final List<String> rawPatterns;
+        final List<String> concreteAliases;
+        final boolean isUniversalWildcard;
         @Nullable String hostName;
         @Nullable String user;
         int port = SshProfile.DEFAULT_PORT;
@@ -76,9 +78,12 @@ public final class SshConfigImporter {
         @Nullable String proxyJump;
         int serverAliveIntervalSeconds = 0;
         boolean hasServerAliveInterval = false;
+        @Nullable Boolean pubkeyAuthentication;
 
-        HostBlockBuilder(@NonNull List<String> aliases) {
-            this.aliases = aliases;
+        HostBlockBuilder(@NonNull List<String> rawPatterns, @NonNull List<String> concreteAliases) {
+            this.rawPatterns = rawPatterns;
+            this.concreteAliases = concreteAliases;
+            this.isUniversalWildcard = isUniversalHostStar(rawPatterns);
         }
     }
 
@@ -102,7 +107,7 @@ public final class SshConfigImporter {
             @NonNull String configContent,
             @NonNull File homeDir,
             @Nullable List<SshProfile> existingProfiles) {
-        List<HostBlockBuilder> blocks = new ArrayList<>();
+        List<HostBlockBuilder> allHostBlocks = new ArrayList<>();
         SectionKind sectionKind = SectionKind.NONE;
         HostBlockBuilder currentBlock = null;
 
@@ -120,19 +125,20 @@ public final class SshConfigImporter {
                 String key = directive.keyword;
                 if ("host".equals(key)) {
                     if (currentBlock != null) {
-                        blocks.add(currentBlock);
+                        allHostBlocks.add(currentBlock);
                         currentBlock = null;
                     }
-                    List<String> concreteAliases = extractConcreteAliases(directive.rawValue);
-                    if (concreteAliases.isEmpty()) {
+                    List<String> patterns = tokenizeRespectingQuotes(directive.rawValue);
+                    List<String> concreteAliases = extractConcreteAliases(patterns);
+                    if (patterns.isEmpty()) {
                         sectionKind = SectionKind.SKIP;
                     } else {
                         sectionKind = SectionKind.HOST;
-                        currentBlock = new HostBlockBuilder(concreteAliases);
+                        currentBlock = new HostBlockBuilder(patterns, concreteAliases);
                     }
                 } else if ("match".equals(key)) {
                     if (currentBlock != null) {
-                        blocks.add(currentBlock);
+                        allHostBlocks.add(currentBlock);
                         currentBlock = null;
                     }
                     sectionKind = SectionKind.SKIP;
@@ -145,12 +151,32 @@ public final class SshConfigImporter {
         }
 
         if (currentBlock != null) {
-            blocks.add(currentBlock);
+            allHostBlocks.add(currentBlock);
+        }
+
+        List<HostBlockBuilder> specificWildcardBlocks = new ArrayList<>();
+        List<HostBlockBuilder> universalWildcardBlocks = new ArrayList<>();
+        for (HostBlockBuilder block : allHostBlocks) {
+            if (block.concreteAliases.isEmpty()) {
+                if (block.isUniversalWildcard) {
+                    universalWildcardBlocks.add(block);
+                } else {
+                    specificWildcardBlocks.add(block);
+                }
+            }
         }
 
         List<ImportCandidate> candidates = new ArrayList<>();
-        for (HostBlockBuilder block : blocks) {
-            emitCandidatesForBlock(block, existingProfiles, candidates);
+        for (HostBlockBuilder block : allHostBlocks) {
+            if (!block.concreteAliases.isEmpty()) {
+                emitCandidatesForBlock(
+                    block,
+                    specificWildcardBlocks,
+                    universalWildcardBlocks,
+                    existingProfiles,
+                    candidates
+                );
+            }
         }
         return Collections.unmodifiableList(candidates);
     }
@@ -193,35 +219,216 @@ public final class SshConfigImporter {
 
     private static void emitCandidatesForBlock(
             @NonNull HostBlockBuilder block,
+            @NonNull List<HostBlockBuilder> specificWildcardBlocks,
+            @NonNull List<HostBlockBuilder> universalWildcardBlocks,
             @Nullable List<SshProfile> existingProfiles,
             @NonNull List<ImportCandidate> out) {
-        if (block.aliases.isEmpty()) {
+        if (block.concreteAliases.isEmpty()) {
             return;
         }
         boolean hasExplicitHostName = block.hostName != null && !block.hostName.isEmpty();
         boolean expandAllAliases = !hasExplicitHostName || block.hostName.contains("%h");
-        int count = expandAllAliases ? block.aliases.size() : 1;
+        int count = expandAllAliases ? block.concreteAliases.size() : 1;
         for (int i = 0; i < count; i++) {
-            String alias = block.aliases.get(i);
-            String resolvedHost = hasExplicitHostName
-                ? block.hostName.replace("%h", alias)
+            String alias = block.concreteAliases.get(i);
+            List<HostBlockBuilder> fallbackChain = collectMatchingFallbacks(
+                alias, block, specificWildcardBlocks, universalWildcardBlocks);
+
+            String rawHostName = firstNonEmptyHostName(fallbackChain);
+            String resolvedHost = rawHostName != null
+                ? rawHostName.replace("%h", alias)
                 : alias;
             if (resolvedHost.isEmpty() || resolvedHost.startsWith("-") || containsWhitespace(resolvedHost)) {
                 continue;
             }
+
+            String user = firstNonNullUser(fallbackChain);
+            int port = firstSetPort(fallbackChain);
+            String identityFile = firstNonNullIdentityFile(fallbackChain);
+            String proxyJump = firstNonNullProxyJump(fallbackChain);
+            int keepAlive = firstSetKeepAlive(fallbackChain);
+            Boolean pubkeyAuth = firstSetPubkeyAuth(fallbackChain);
+
+            SshAuthType authType = Boolean.FALSE.equals(pubkeyAuth)
+                ? SshAuthType.PASSWORD
+                : SshAuthType.SSH_KEY;
+
             SshProfile profile = SshProfile.builder()
                 .displayName(alias)
                 .host(resolvedHost)
-                .port(block.port)
-                .username(block.user != null ? block.user : "")
-                .authType(SshAuthType.SSH_KEY)
-                .privateKeyPath(block.identityFile != null ? block.identityFile : "")
-                .proxyJump(block.proxyJump != null ? block.proxyJump : "")
-                .keepAliveIntervalSeconds(block.serverAliveIntervalSeconds)
+                .port(port)
+                .username(user != null ? user : "")
+                .authType(authType)
+                .privateKeyPath(authType == SshAuthType.SSH_KEY && identityFile != null ? identityFile : "")
+                .proxyJump(proxyJump != null ? proxyJump : "")
+                .keepAliveIntervalSeconds(keepAlive)
                 .build();
             SshProfile matching = findMatchingProfile(profile, existingProfiles);
             out.add(new ImportCandidate(alias, profile, matching != null, matching));
         }
+    }
+
+    @NonNull
+    private static List<HostBlockBuilder> collectMatchingFallbacks(
+            @NonNull String alias,
+            @NonNull HostBlockBuilder primaryBlock,
+            @NonNull List<HostBlockBuilder> specificWildcardBlocks,
+            @NonNull List<HostBlockBuilder> universalWildcardBlocks) {
+        List<HostBlockBuilder> chain = new ArrayList<>();
+        chain.add(primaryBlock);
+        for (HostBlockBuilder block : specificWildcardBlocks) {
+            if (matchesHostPatterns(alias, block.rawPatterns)) {
+                chain.add(block);
+            }
+        }
+        for (HostBlockBuilder block : universalWildcardBlocks) {
+            if (matchesHostPatterns(alias, block.rawPatterns)) {
+                chain.add(block);
+            }
+        }
+        return chain;
+    }
+
+    @Nullable
+    private static String firstNonEmptyHostName(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.hostName != null && !block.hostName.isEmpty()) {
+                return block.hostName;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String firstNonNullUser(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.user != null) {
+                return block.user;
+            }
+        }
+        return null;
+    }
+
+    private static int firstSetPort(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.hasPort) {
+                return block.port;
+            }
+        }
+        return SshProfile.DEFAULT_PORT;
+    }
+
+    @Nullable
+    private static String firstNonNullIdentityFile(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.identityFile != null) {
+                return block.identityFile;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String firstNonNullProxyJump(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.proxyJump != null) {
+                return block.proxyJump;
+            }
+        }
+        return null;
+    }
+
+    private static int firstSetKeepAlive(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.hasServerAliveInterval) {
+                return block.serverAliveIntervalSeconds;
+            }
+        }
+        return 0;
+    }
+
+    @Nullable
+    private static Boolean firstSetPubkeyAuth(@NonNull List<HostBlockBuilder> chain) {
+        for (HostBlockBuilder block : chain) {
+            if (block.pubkeyAuthentication != null) {
+                return block.pubkeyAuthentication;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isUniversalHostStar(@NonNull List<String> patterns) {
+        if (patterns.isEmpty()) {
+            return false;
+        }
+        boolean sawStar = false;
+        for (String p : patterns) {
+            if ("*".equals(p)) {
+                sawStar = true;
+            } else {
+                return false;
+            }
+        }
+        return sawStar;
+    }
+
+    static boolean matchesHostPatterns(@NonNull String alias, @NonNull List<String> patterns) {
+        boolean matchedPositive = false;
+        for (String pattern : patterns) {
+            if (pattern.isEmpty()) {
+                continue;
+            }
+            if (pattern.startsWith("!")) {
+                String negated = pattern.substring(1);
+                if (!negated.isEmpty() && globMatches(alias, negated)) {
+                    return false;
+                }
+            } else if (globMatches(alias, pattern)) {
+                matchedPositive = true;
+            }
+        }
+        return matchedPositive;
+    }
+
+    private static boolean globMatches(@NonNull String text, @NonNull String pattern) {
+        return globMatchesAt(text, 0, pattern, 0);
+    }
+
+    private static boolean globMatchesAt(
+            @NonNull String text,
+            int ti,
+            @NonNull String pattern,
+            int pi) {
+        while (pi < pattern.length()) {
+            char pc = pattern.charAt(pi);
+            if (pc == '*') {
+                while (pi < pattern.length() && pattern.charAt(pi) == '*') {
+                    pi++;
+                }
+                if (pi == pattern.length()) {
+                    return true;
+                }
+                for (int k = ti; k <= text.length(); k++) {
+                    if (globMatchesAt(text, k, pattern, pi)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if (pc == '?') {
+                if (ti >= text.length()) {
+                    return false;
+                }
+                ti++;
+                pi++;
+            } else {
+                if (ti >= text.length() || text.charAt(ti) != pc) {
+                    return false;
+                }
+                ti++;
+                pi++;
+            }
+        }
+        return ti == text.length();
     }
 
     private static void applyDirective(
@@ -254,8 +461,8 @@ public final class SshConfigImporter {
                 }
                 break;
             case "identityfile":
-                if (block.identityFile == null && !"none".equalsIgnoreCase(value)) {
-                    block.identityFile = expandTildePath(value, homeDir);
+                if (block.identityFile == null) {
+                    block.identityFile = "none".equalsIgnoreCase(value) ? "" : expandTildePath(value, homeDir);
                 }
                 break;
             case "proxyjump":
@@ -269,6 +476,15 @@ public final class SshConfigImporter {
                     if (interval != null) {
                         block.serverAliveIntervalSeconds = interval;
                         block.hasServerAliveInterval = true;
+                    }
+                }
+                break;
+            case "pubkeyauthentication":
+                if (block.pubkeyAuthentication == null) {
+                    if ("no".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
+                        block.pubkeyAuthentication = Boolean.FALSE;
+                    } else if ("yes".equalsIgnoreCase(value) || "true".equalsIgnoreCase(value)) {
+                        block.pubkeyAuthentication = Boolean.TRUE;
                     }
                 }
                 break;
@@ -313,8 +529,7 @@ public final class SshConfigImporter {
     }
 
     @NonNull
-    private static List<String> extractConcreteAliases(@NonNull String rawValue) {
-        List<String> tokens = tokenizeRespectingQuotes(rawValue);
+    private static List<String> extractConcreteAliases(@NonNull List<String> tokens) {
         List<String> concrete = new ArrayList<>();
         for (String token : tokens) {
             if (token.isEmpty()
