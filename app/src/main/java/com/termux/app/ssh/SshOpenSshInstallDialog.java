@@ -4,12 +4,9 @@ import android.app.Activity;
 import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.Window;
-import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -33,8 +30,7 @@ public final class SshOpenSshInstallDialog {
             @NonNull Activity activity,
             @NonNull SshProfile profile,
             @NonNull File sshBinary,
-            @NonNull Runnable onConfirmInstallAndConnect,
-            @Nullable Runnable onCancel) {
+            @NonNull Runnable onConfirmInstallAndConnect) {
         TermuxColorPalette palette = TermuxThemeManager.getActivePalette(activity);
         float density = activity.getResources().getDisplayMetrics().density;
 
@@ -79,43 +75,10 @@ public final class SshOpenSshInstallDialog {
             .setView(view)
             .setPositiveButton(R.string.ssh_missing_openssh_install_and_connect, (d, which) ->
                 onConfirmInstallAndConnect.run())
-            .setNegativeButton(android.R.string.cancel, (d, which) -> {
-                if (onCancel != null) {
-                    onCancel.run();
-                }
-            })
-            .setOnCancelListener(d -> {
-                if (onCancel != null) {
-                    onCancel.run();
-                }
-            })
+            .setNegativeButton(android.R.string.cancel, null)
             .create();
 
-        dialog.setOnShowListener(d -> applyWindowAndButtonTheme(dialog, palette, density));
-        dialog.show();
-        applyWindowAndButtonTheme(dialog, palette, density);
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
         return dialog;
-    }
-
-    private static void applyWindowAndButtonTheme(
-            @NonNull AlertDialog dialog,
-            @NonNull TermuxColorPalette palette,
-            float density) {
-        Window window = dialog.getWindow();
-        if (window != null) {
-            GradientDrawable windowBg = new GradientDrawable();
-            windowBg.setShape(GradientDrawable.RECTANGLE);
-            windowBg.setCornerRadius(24f * density);
-            windowBg.setColor(palette.surfaceContainerHigh);
-            window.setBackgroundDrawable(windowBg);
-        }
-        Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (positiveButton != null) {
-            positiveButton.setTextColor(palette.accent);
-        }
-        Button negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-        if (negativeButton != null) {
-            negativeButton.setTextColor(palette.onSurfaceVariant);
-        }
     }
 }

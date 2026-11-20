@@ -54,13 +54,12 @@ public class SshHostsActivityTest {
     private List<SshSessionLaunchRequest> launchedRequests;
     private boolean launchShouldSucceed;
     private SshKeygenRunner keygenRunner;
+    private java.util.concurrent.Executor keygenExecutor;
 
     @Before
     public void setUp() throws Exception {
         appContext = RuntimeEnvironment.getApplication();
-        if (TermuxAppearancePreferences.getPreferences(appContext) != null) {
-            TermuxAppearancePreferences.getPreferences(appContext).edit().clear().commit();
-        }
+        resetGlobalAppearanceState(appContext);
         TermuxThemeManager.setSelectedThemeId(appContext, TermuxColorPalette.THEME_CATPPUCCIN_MOCHA);
 
         prefixDir = tempFolder.newFolder("prefix");
@@ -72,6 +71,7 @@ public class SshHostsActivityTest {
         launchShouldSucceed = true;
         keygenRunner = (pfx, home, bin, args) ->
             SshKeygenRunner.ExecutionResult.failure(1, "", "Stub keygen runner");
+        keygenExecutor = Runnable::run;
 
         SshHostsActivity.setEnvironmentFactoryForTests(activity -> new SshHostsEnvironment(
             repository,
@@ -83,16 +83,23 @@ public class SshHostsActivityTest {
                 return launchShouldSucceed;
             },
             keygenRunner,
-            () -> 1_800_000_000_000L
+            () -> 1_800_000_000_000L,
+            keygenExecutor
         ));
     }
 
     @After
     public void tearDown() {
         SshHostsActivity.setEnvironmentFactoryForTests(null);
-        if (TermuxAppearancePreferences.getPreferences(appContext) != null) {
-            TermuxAppearancePreferences.getPreferences(appContext).edit().clear().commit();
+        resetGlobalAppearanceState(appContext);
+    }
+
+    private static void resetGlobalAppearanceState(Context context) {
+        if (TermuxAppearancePreferences.getPreferences(context) != null) {
+            TermuxAppearancePreferences.getPreferences(context).edit().clear().commit();
         }
+        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
+        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
     }
 
     @Test
@@ -320,6 +327,35 @@ public class SshHostsActivityTest {
             assertTrue(dialog instanceof androidx.appcompat.app.AlertDialog);
             androidx.appcompat.app.AlertDialog alert = (androidx.appcompat.app.AlertDialog) dialog;
             assertTrue(alert.isShowing());
+
+            TermuxColorPalette mocha = TermuxThemePresets.getBuiltInById(
+                TermuxColorPalette.THEME_CATPPUCCIN_MOCHA);
+            android.graphics.drawable.Drawable bg = alert.getWindow().getDecorView().getBackground();
+            assertTrue(bg instanceof android.graphics.drawable.GradientDrawable);
+            android.graphics.drawable.GradientDrawable windowBg = (android.graphics.drawable.GradientDrawable) bg;
+            assertEquals(mocha.surfaceContainerHigh, windowBg.getColor().getDefaultColor());
+            assertEquals(
+                24f * activity.getResources().getDisplayMetrics().density,
+                windowBg.getCornerRadius(),
+                0.5f
+            );
+            assertEquals(
+                mocha.onSurface,
+                ((TextView) alert.findViewById(androidx.appcompat.R.id.alertTitle)).getCurrentTextColor()
+            );
+            assertEquals(
+                mocha.onSurfaceVariant,
+                ((TextView) alert.findViewById(android.R.id.message)).getCurrentTextColor()
+            );
+            assertEquals(
+                mocha.error,
+                alert.getButton(android.content.DialogInterface.BUTTON_POSITIVE).getCurrentTextColor()
+            );
+            assertEquals(
+                mocha.onSurfaceVariant,
+                alert.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).getCurrentTextColor()
+            );
+
             alert.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).performClick();
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
             assertFalse(alert.isShowing());
@@ -497,6 +533,98 @@ public class SshHostsActivityTest {
         }
     }
 
+    @Test
+    public void editProfileDialog_authTypeToggleRoundTripPreservesSecretUnlessEditedOrCleared()
+            throws Exception {
+        SshProfile passwordHost = SshProfile.builder()
+            .id("id-roundtrip-pw")
+            .displayName("PW Roundtrip")
+            .host("pw.internal")
+            .username("deploy")
+            .authType(SshAuthType.PASSWORD)
+            .build();
+        repository.saveProfileWithSecret(passwordHost, "roundtrip-pw");
+
+        SshProfile keyHost = SshProfile.builder()
+            .id("id-roundtrip-key")
+            .displayName("Key Roundtrip")
+            .host("key.internal")
+            .username("ops")
+            .authType(SshAuthType.SSH_KEY)
+            .build();
+        repository.saveProfileWithSecret(keyHost, "roundtrip-passphrase");
+
+        try (ActivityController<SshHostsActivity> controller =
+                 Robolectric.buildActivity(SshHostsActivity.class, SshHostsActivity.createIntent(appContext))) {
+            SshHostsActivity activity = controller.create().start().resume().get();
+            android.widget.LinearLayout listContainer = activity.findViewById(R.id.ssh_hosts_list_container);
+
+            // 1. PASSWORD -> SSH_KEY -> PASSWORD round-trip without editing/clearing preserves secret
+            int pwIdx = findCardIndexByName(listContainer, "PW Roundtrip");
+            assertTrue(pwIdx >= 0);
+            listContainer.getChildAt(pwIdx).findViewById(R.id.ssh_host_edit_button).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+            androidx.appcompat.app.AlertDialog pwDialog =
+                (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            android.widget.EditText pwSecretInput = pwDialog.findViewById(R.id.ssh_form_secret_input);
+            TextView pwSecretStatus = pwDialog.findViewById(R.id.ssh_form_secret_status);
+
+            pwDialog.findViewById(R.id.ssh_form_auth_key_button).performClick();
+            assertEquals("", pwSecretInput.getText().toString());
+            assertEquals(View.GONE, pwSecretStatus.getVisibility());
+
+            pwDialog.findViewById(R.id.ssh_form_auth_password_button).performClick();
+            assertTrue(pwSecretInput.getTransformationMethod() instanceof android.text.method.PasswordTransformationMethod);
+            assertEquals("roundtrip-pw", pwSecretInput.getText().toString());
+            assertEquals(View.VISIBLE, pwSecretStatus.getVisibility());
+            assertEquals(
+                activity.getString(R.string.ssh_form_secret_kept_status),
+                pwSecretStatus.getText().toString()
+            );
+
+            pwDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            assertFalse(pwDialog.isShowing());
+            assertEquals("roundtrip-pw", repository.getSecret(passwordHost.id));
+
+            // 2. SSH_KEY -> PASSWORD -> SSH_KEY round-trip preserves passphrase
+            int keyIdx = findCardIndexByName(listContainer, "Key Roundtrip");
+            assertTrue(keyIdx >= 0);
+            listContainer.getChildAt(keyIdx).findViewById(R.id.ssh_host_edit_button).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+            androidx.appcompat.app.AlertDialog keyDialog =
+                (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            android.widget.EditText keySecretInput = keyDialog.findViewById(R.id.ssh_form_secret_input);
+            keyDialog.findViewById(R.id.ssh_form_auth_password_button).performClick();
+            assertEquals("", keySecretInput.getText().toString());
+
+            keyDialog.findViewById(R.id.ssh_form_auth_key_button).performClick();
+            assertTrue(keySecretInput.getTransformationMethod() instanceof android.text.method.PasswordTransformationMethod);
+            assertEquals("roundtrip-passphrase", keySecretInput.getText().toString());
+
+            keyDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            assertEquals("roundtrip-passphrase", repository.getSecret(keyHost.id));
+
+            // 3. Explicit Clear before round-trip still purges secret on Save
+            pwIdx = findCardIndexByName(listContainer, "PW Roundtrip");
+            listContainer.getChildAt(pwIdx).findViewById(R.id.ssh_host_edit_button).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+            androidx.appcompat.app.AlertDialog clearRoundtripDialog =
+                (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            clearRoundtripDialog.findViewById(R.id.ssh_form_secret_clear_button).performClick();
+            clearRoundtripDialog.findViewById(R.id.ssh_form_auth_key_button).performClick();
+            clearRoundtripDialog.findViewById(R.id.ssh_form_auth_password_button).performClick();
+            assertEquals("", ((android.widget.EditText) clearRoundtripDialog.findViewById(R.id.ssh_form_secret_input)).getText().toString());
+            clearRoundtripDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            assertFalse(repository.hasSecret(passwordHost.id));
+        }
+    }
+
     private static int findCardIndexByName(android.widget.LinearLayout listContainer, String expectedName) {
         for (int i = 0; i < listContainer.getChildCount(); i++) {
             TextView tv = listContainer.getChildAt(i).findViewById(R.id.ssh_host_display_name);
@@ -636,6 +764,119 @@ public class SshHostsActivityTest {
     }
 
     @Test
+    public void ed25519KeyGeneration_runsOffUiThreadAndGuardsDestroyedLifecycle() throws Exception {
+        File binDir = new File(prefixDir, "bin");
+        assertTrue(binDir.mkdirs());
+        File sshKeygen = new File(binDir, "ssh-keygen");
+        assertTrue(sshKeygen.createNewFile());
+        assertTrue(sshKeygen.setExecutable(true, true));
+
+        java.util.concurrent.ExecutorService bgExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        keygenExecutor = bgExecutor;
+        try {
+            java.util.concurrent.CountDownLatch runnerCompleted = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicBoolean ranOnMainThread =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            keygenRunner = (pfx, home, bin, args) -> {
+                ranOnMainThread.set(android.os.Looper.getMainLooper().isCurrentThread());
+                String targetPath = args.get(args.indexOf("-f") + 1);
+                try {
+                    java.nio.file.Files.write(
+                        new File(targetPath).toPath(),
+                        "PRIV_BG".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                    );
+                    java.nio.file.Files.write(
+                        new File(targetPath + ".pub").toPath(),
+                        "ssh-ed25519 AAAABGKey bg@termux\n".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                    );
+                    return SshKeygenRunner.ExecutionResult.success("ok", "");
+                } catch (java.io.IOException e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    runnerCompleted.countDown();
+                }
+            };
+
+            try (ActivityController<SshHostsActivity> controller =
+                     Robolectric.buildActivity(SshHostsActivity.class, SshHostsActivity.createIntent(appContext))) {
+                SshHostsActivity activity = controller.create().start().resume().get();
+
+                // Verify production createDefault uses an off-main-thread Executor
+                java.util.concurrent.CountDownLatch defaultLatch = new java.util.concurrent.CountDownLatch(1);
+                java.util.concurrent.atomic.AtomicBoolean defaultOnMain =
+                    new java.util.concurrent.atomic.AtomicBoolean(true);
+                SshHostsEnvironment.createDefault(activity).keygenExecutor.execute(() -> {
+                    defaultOnMain.set(android.os.Looper.getMainLooper().isCurrentThread());
+                    defaultLatch.countDown();
+                });
+                assertTrue(defaultLatch.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertFalse("Default environment keygenExecutor must run off main thread", defaultOnMain.get());
+
+                activity.findViewById(R.id.ssh_add_host_button).performClick();
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+                androidx.appcompat.app.AlertDialog formDialog =
+                    (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+                android.widget.Spinner keySpinner = formDialog.findViewById(R.id.ssh_form_key_spinner);
+
+                formDialog.findViewById(R.id.ssh_form_generate_key_button).performClick();
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+                androidx.appcompat.app.AlertDialog keygenPrompt =
+                    (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+                ((android.widget.EditText) keygenPrompt.findViewById(R.id.ssh_keygen_name_input)).setText("bg_ed25519");
+                keygenPrompt.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+
+                assertTrue(runnerCompleted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertFalse("ssh-keygen must execute off the UI thread", ranOnMainThread.get());
+
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+                assertEquals("bg_ed25519", keySpinner.getSelectedItem().toString());
+            }
+
+            // Verify destroyed-activity lifecycle guard: completing background keygen after destroy does not crash
+            java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+            keygenRunner = (pfx, home, bin, args) -> {
+                entered.countDown();
+                try {
+                    assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    finished.countDown();
+                }
+                return SshKeygenRunner.ExecutionResult.failure(1, "", "aborted");
+            };
+
+            try (ActivityController<SshHostsActivity> controller =
+                     Robolectric.buildActivity(SshHostsActivity.class, SshHostsActivity.createIntent(appContext))) {
+                SshHostsActivity activity = controller.create().start().resume().get();
+                activity.findViewById(R.id.ssh_action_key_tools).performClick();
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+                androidx.appcompat.app.AlertDialog toolsDialog =
+                    (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+                toolsDialog.findViewById(R.id.ssh_key_tools_generate_button).performClick();
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+
+                androidx.appcompat.app.AlertDialog keygenPrompt =
+                    (androidx.appcompat.app.AlertDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+                keygenPrompt.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+                assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+                controller.pause().stop().destroy();
+                release.countDown();
+                assertTrue(finished.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            }
+        } finally {
+            bgExecutor.shutdownNow();
+        }
+    }
+
+    @Test
     public void configImportDialogPreviewsDuplicatesAndImportsSelectedReadOnly() throws Exception {
         SshProfile existingProd = SshProfile.builder()
             .id("id-existing-prod")
@@ -646,11 +887,15 @@ public class SshHostsActivityTest {
             .build();
         repository.saveProfile(existingProd);
 
+        TermuxThemeManager.setSelectedThemeId(appContext, TermuxColorPalette.THEME_CATPPUCCIN_LATTE);
+        TermuxColorPalette latte = TermuxThemePresets.getBuiltInById(
+            TermuxColorPalette.THEME_CATPPUCCIN_LATTE);
+
         try (ActivityController<SshHostsActivity> controller =
                  Robolectric.buildActivity(SshHostsActivity.class, SshHostsActivity.createIntent(appContext))) {
             SshHostsActivity activity = controller.create().start().resume().get();
 
-            // 1. No ~/.ssh/config yet -> shows empty message dialog
+            // 1. No ~/.ssh/config yet -> shows empty message dialog themed with Catppuccin Latte
             activity.findViewById(R.id.ssh_action_import_config).performClick();
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
             androidx.appcompat.app.AlertDialog emptyImportDialog =
@@ -660,6 +905,23 @@ public class SshHostsActivityTest {
             assertEquals(
                 activity.getString(R.string.ssh_config_import_empty),
                 ((TextView) emptyImportDialog.findViewById(android.R.id.message)).getText().toString()
+            );
+            assertEquals(
+                latte.surfaceContainerHigh,
+                ((android.graphics.drawable.GradientDrawable) emptyImportDialog.getWindow().getDecorView().getBackground())
+                    .getColor().getDefaultColor()
+            );
+            assertEquals(
+                latte.onSurface,
+                ((TextView) emptyImportDialog.findViewById(androidx.appcompat.R.id.alertTitle)).getCurrentTextColor()
+            );
+            assertEquals(
+                latte.onSurfaceVariant,
+                ((TextView) emptyImportDialog.findViewById(android.R.id.message)).getCurrentTextColor()
+            );
+            assertEquals(
+                latte.accent,
+                emptyImportDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).getCurrentTextColor()
             );
             emptyImportDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();

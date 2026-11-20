@@ -61,8 +61,11 @@ final class SshProfileFormDialog {
     private boolean advancedExpanded;
     private boolean secretVisible = false;
     private boolean hadExistingSecret = false;
+    private boolean secretUnreadable = false;
+    @Nullable private String initialLoadedSecret = null;
     private boolean secretDirty = false;
     private boolean secretCleared = false;
+    private boolean secretUserModified = false;
     private boolean suppressSecretWatcher = false;
 
     private EditText displayNameInput;
@@ -118,7 +121,7 @@ final class SshProfileFormDialog {
             ? existingProfile.authType
             : SshProfile.DEFAULT_AUTH_TYPE;
         this.selectedKeyPath = existingProfile != null ? existingProfile.privateKeyPath : "";
-        this.advancedExpanded = existingProfile != null && hasAnyAdvancedValues(existingProfile);
+        this.advancedExpanded = existingProfile != null && existingProfile.hasAdvancedValues();
     }
 
     @NonNull
@@ -134,13 +137,6 @@ final class SshProfileFormDialog {
         return form;
     }
 
-    private static boolean hasAnyAdvancedValues(@NonNull SshProfile profile) {
-        return !profile.startupCommand.isEmpty()
-            || !profile.proxyJump.isEmpty()
-            || profile.keepAliveIntervalSeconds > 0
-            || !profile.extraArgs.isEmpty();
-    }
-
     private void buildAndShow() {
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_ssh_profile_form, null, false);
         bindViews(view);
@@ -153,9 +149,7 @@ final class SshProfileFormDialog {
             .setPositiveButton(R.string.ssh_form_save, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create();
-        dialog.setOnShowListener(d -> SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent));
-        dialog.show();
-        SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent);
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> attemptSave());
     }
@@ -302,6 +296,7 @@ final class SshProfileFormDialog {
                 try {
                     String loadedSecret = environment.repository.getSecret(existingProfile.id);
                     if (loadedSecret != null && !loadedSecret.isEmpty()) {
+                        initialLoadedSecret = loadedSecret;
                         suppressSecretWatcher = true;
                         secretInput.setText(loadedSecret);
                         suppressSecretWatcher = false;
@@ -311,6 +306,7 @@ final class SshProfileFormDialog {
                         hadExistingSecret = false;
                     }
                 } catch (GeneralSecurityException | IOException e) {
+                    secretUnreadable = true;
                     secretStatusView.setText(R.string.ssh_form_secret_unreadable_status);
                     secretStatusView.setVisibility(View.VISIBLE);
                 }
@@ -338,6 +334,7 @@ final class SshProfileFormDialog {
         secretClearButton.setOnClickListener(v -> {
             secretCleared = true;
             secretDirty = true;
+            secretUserModified = true;
             suppressSecretWatcher = true;
             secretInput.setText("");
             suppressSecretWatcher = false;
@@ -366,6 +363,7 @@ final class SshProfileFormDialog {
                 }
                 secretDirty = true;
                 secretCleared = false;
+                secretUserModified = true;
                 if (hadExistingSecret && (s == null || s.length() == 0)) {
                     secretStatusView.setText(R.string.ssh_form_secret_cleared_status);
                     secretStatusView.setVisibility(View.VISIBLE);
@@ -396,7 +394,12 @@ final class SshProfileFormDialog {
         });
 
         importKeyButton.setOnClickListener(v ->
-            activity.launchSafKeyImport(importedFile -> refreshKeyPicker(importedFile.getAbsolutePath())));
+            activity.launchSafKeyImport(importedFile -> {
+                if (activity.isFinishing() || activity.isDestroyed() || dialog == null || !dialog.isShowing()) {
+                    return;
+                }
+                refreshKeyPicker(importedFile.getAbsolutePath());
+            }));
 
         generateKeyButton.setOnClickListener(v ->
             SshKeyToolsHelper.startEd25519KeyGeneration(
@@ -404,6 +407,9 @@ final class SshProfileFormDialog {
                 environment,
                 palette,
                 result -> {
+                    if (activity.isFinishing() || activity.isDestroyed() || dialog == null || !dialog.isShowing()) {
+                        return;
+                    }
                     String path = result.getPrivateKeyPath();
                     if (path != null) {
                         refreshKeyPicker(path);
@@ -417,13 +423,29 @@ final class SshProfileFormDialog {
             return;
         }
         selectedAuthType = target;
-        if (existingProfile != null && existingProfile.authType != target && !secretDirty) {
-            suppressSecretWatcher = true;
-            secretInput.setText("");
-            suppressSecretWatcher = false;
-            secretDirty = true;
-            secretCleared = false;
-            secretStatusView.setVisibility(View.GONE);
+        if (existingProfile != null && hadExistingSecret && !secretUserModified) {
+            if (target == existingProfile.authType) {
+                suppressSecretWatcher = true;
+                secretInput.setText(initialLoadedSecret != null ? initialLoadedSecret : "");
+                suppressSecretWatcher = false;
+                secretDirty = false;
+                secretCleared = false;
+                secretVisible = false;
+                applySecretMaskState();
+                secretStatusView.setText(
+                    secretUnreadable
+                        ? R.string.ssh_form_secret_unreadable_status
+                        : R.string.ssh_form_secret_kept_status
+                );
+                secretStatusView.setVisibility(View.VISIBLE);
+            } else {
+                suppressSecretWatcher = true;
+                secretInput.setText("");
+                suppressSecretWatcher = false;
+                secretDirty = true;
+                secretCleared = false;
+                secretStatusView.setVisibility(View.GONE);
+            }
         }
         updateAuthUi();
         updateSecretClearVisibility();
@@ -469,7 +491,11 @@ final class SshProfileFormDialog {
 
     private void updateSecretClearVisibility() {
         boolean hasText = secretInput.getText() != null && secretInput.getText().length() > 0;
-        secretClearButton.setVisibility((hasText || (hadExistingSecret && !secretCleared)) ? View.VISIBLE : View.GONE);
+        boolean hasOriginalSecretForActiveAuth = existingProfile != null
+            && hadExistingSecret
+            && !secretCleared
+            && selectedAuthType == existingProfile.authType;
+        secretClearButton.setVisibility((hasText || hasOriginalSecretForActiveAuth) ? View.VISIBLE : View.GONE);
     }
 
     private void updateAdvancedVisibility() {
@@ -609,7 +635,8 @@ final class SshProfileFormDialog {
         String enteredSecret = secretInput.getText() != null ? secretInput.getText().toString() : "";
         try {
             if (enteredSecret.isEmpty()) {
-                if (existingProfile != null && hadExistingSecret && (secretDirty || secretCleared)) {
+                boolean authTypeChanged = existingProfile != null && selectedAuthType != existingProfile.authType;
+                if (existingProfile != null && hadExistingSecret && (secretDirty || secretCleared || authTypeChanged)) {
                     environment.repository.saveProfileWithSecret(candidate, null);
                 } else {
                     environment.repository.saveProfile(candidate);

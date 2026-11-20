@@ -1,8 +1,7 @@
 package com.termux.app.ssh;
 
 import androidx.annotation.NonNull;
-
-import com.termux.shared.termux.TermuxConstants;
+import androidx.annotation.Nullable;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,22 +22,14 @@ public final class SshAskPassManager {
     public static final String ENV_SSH_ASKPASS = "SSH_ASKPASS";
     public static final String ENV_SSH_ASKPASS_REQUIRE = "SSH_ASKPASS_REQUIRE";
     public static final String ENV_DISPLAY = "DISPLAY";
+    private static final String SCRIPT_SUFFIX = ".sh";
+    private static final String SECRET_SUFFIX = ".secret";
 
     @NonNull
     private final File tempDir;
 
     public SshAskPassManager(@NonNull File tempDir) {
         this.tempDir = tempDir;
-    }
-
-    @NonNull
-    public static SshAskPassManager createDefault() {
-        return new SshAskPassManager(TermuxConstants.TERMUX_TMP_PREFIX_DIR);
-    }
-
-    @NonNull
-    public File getTempDir() {
-        return tempDir;
     }
 
     @NonNull
@@ -51,8 +42,8 @@ public final class SshAskPassManager {
         }
 
         String token = UUID.randomUUID().toString();
-        File secretFile = new File(tempDir, "termux-ssh-askpass-" + token + ".secret");
-        File scriptFile = new File(tempDir, "termux-ssh-askpass-" + token + ".sh");
+        File secretFile = new File(tempDir, "termux-ssh-askpass-" + token + SECRET_SUFFIX);
+        File scriptFile = new File(tempDir, "termux-ssh-askpass-" + token + SCRIPT_SUFFIX);
 
         try {
             SshFsUtils.writeBytesAtomic0600(secretFile, secret.getBytes(StandardCharsets.UTF_8));
@@ -69,8 +60,8 @@ public final class SshAskPassManager {
 
     @NonNull
     private static String buildHelperScript(@NonNull File secretFile, @NonNull File scriptFile) {
-        String quotedSecret = shellSingleQuote(secretFile.getAbsolutePath());
-        String quotedScript = shellSingleQuote(scriptFile.getAbsolutePath());
+        String quotedSecret = SshCommandBuilder.shellQuote(secretFile.getAbsolutePath());
+        String quotedScript = SshCommandBuilder.shellQuote(scriptFile.getAbsolutePath());
         return TERMUX_SH_SHEBANG + "\n"
             + "secret_file=" + quotedSecret + "\n"
             + "script_file=" + quotedScript + "\n"
@@ -83,9 +74,16 @@ public final class SshAskPassManager {
             + "exit \"$status\"\n";
     }
 
-    @NonNull
-    static String shellSingleQuote(@NonNull String value) {
-        return "'" + value.replace("'", "'\\''") + "'";
+    public static void cleanupFilesForScriptPath(@Nullable String scriptPath) {
+        if (scriptPath == null || scriptPath.trim().isEmpty()) {
+            return;
+        }
+        deleteQuietly(new File(scriptPath));
+        if (scriptPath.endsWith(SCRIPT_SUFFIX)) {
+            String secretPath = scriptPath.substring(0, scriptPath.length() - SCRIPT_SUFFIX.length())
+                + SECRET_SUFFIX;
+            deleteQuietly(new File(secretPath));
+        }
     }
 
     private static void deleteQuietly(@NonNull File file) {

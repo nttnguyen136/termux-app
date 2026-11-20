@@ -74,9 +74,7 @@ public class TermuxActivitySshDrawerAndSheetTest {
     public void setUp() throws Exception {
         Application app = RuntimeEnvironment.getApplication();
         appContext = app;
-        if (TermuxAppearancePreferences.getPreferences(appContext) != null) {
-            TermuxAppearancePreferences.getPreferences(appContext).edit().clear().commit();
-        }
+        resetGlobalAppearanceState(appContext);
         TermuxThemeManager.setSelectedThemeId(appContext, TermuxColorPalette.THEME_CATPPUCCIN_MOCHA);
 
         TermuxShellManager manager = TermuxShellManager.getShellManager();
@@ -127,9 +125,15 @@ public class TermuxActivitySshDrawerAndSheetTest {
         if (prefs != null) {
             prefs.setCurrentSession(null);
         }
-        if (TermuxAppearancePreferences.getPreferences(appContext) != null) {
-            TermuxAppearancePreferences.getPreferences(appContext).edit().clear().commit();
+        resetGlobalAppearanceState(appContext);
+    }
+
+    private static void resetGlobalAppearanceState(Context context) {
+        if (TermuxAppearancePreferences.getPreferences(context) != null) {
+            TermuxAppearancePreferences.getPreferences(context).edit().clear().commit();
         }
+        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
+        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
     }
 
     @Test

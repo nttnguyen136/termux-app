@@ -79,10 +79,7 @@ final class SshConfigImportDialog {
                 .setMessage(R.string.ssh_config_import_empty)
                 .setPositiveButton(android.R.string.ok, null)
                 .create();
-            emptyDialog.setOnShowListener(d ->
-                SshHostsActivity.styleAlertDialog(emptyDialog, palette, palette.accent));
-            emptyDialog.show();
-            SshHostsActivity.styleAlertDialog(emptyDialog, palette, palette.accent);
+            SshDialogStyler.showStyledDialog(activity, emptyDialog, palette);
             return;
         }
 
@@ -113,7 +110,7 @@ final class SshConfigImportDialog {
             aliasView.setTextColor(palette.onSurface);
 
             TextView endpointView = rowView.findViewById(R.id.ssh_import_candidate_endpoint);
-            endpointView.setText(formatCandidateEndpoint(candidate.getProfile()));
+            endpointView.setText(candidate.getProfile().formatEndpoint());
             endpointView.setTextColor(palette.onSurfaceVariant);
 
             TextView dupBadge = rowView.findViewById(R.id.ssh_import_candidate_duplicate_badge);
@@ -172,9 +169,7 @@ final class SshConfigImportDialog {
             .setPositiveButton(R.string.ssh_config_import_confirm, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create();
-        dialog.setOnShowListener(d -> SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent));
-        dialog.show();
-        SshHostsActivity.styleAlertDialog(dialog, palette, palette.accent);
+        SshDialogStyler.showStyledDialog(activity, dialog, palette);
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             List<SshProfile> toImport = new ArrayList<>();
@@ -231,16 +226,5 @@ final class SshConfigImportDialog {
                 ).show();
             }
         });
-    }
-
-    @NonNull
-    private static String formatCandidateEndpoint(@NonNull SshProfile profile) {
-        String hostAndPort = profile.port != SshProfile.DEFAULT_PORT
-            ? profile.host + ":" + profile.port
-            : profile.host;
-        if (profile.username.isEmpty()) {
-            return hostAndPort;
-        }
-        return profile.username + "@" + hostAndPort;
     }
 }

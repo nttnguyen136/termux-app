@@ -26,12 +26,15 @@ public class SshConnectionLauncherTest {
     public final TemporaryFolder tempFolder = new TemporaryFolder();
 
     @org.junit.Before
+    @org.junit.After
     public void resetAppearancePreferences() {
         android.content.Context context = org.robolectric.RuntimeEnvironment.getApplication();
         if (com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(context) != null) {
             com.termux.shared.termux.theme.TermuxAppearancePreferences.getPreferences(context)
                 .edit().clear().commit();
         }
+        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(new java.util.Properties());
+        com.termux.shared.theme.NightMode.setAppNightMode(com.termux.shared.theme.NightMode.TRUE.getName());
     }
 
     @Test
@@ -319,6 +322,15 @@ public class SshConnectionLauncherTest {
                  org.robolectric.Robolectric.buildActivity(com.termux.app.activities.SettingsActivity.class)) {
             com.termux.app.activities.SettingsActivity activity = controller.create().start().resume().get();
 
+            com.termux.shared.termux.theme.TermuxThemeManager.setSelectedThemeId(
+                activity,
+                com.termux.shared.termux.theme.TermuxColorPalette.THEME_CATPPUCCIN_LATTE
+            );
+            com.termux.shared.termux.theme.TermuxColorPalette latte =
+                com.termux.shared.termux.theme.TermuxThemePresets.getBuiltInById(
+                    com.termux.shared.termux.theme.TermuxColorPalette.THEME_CATPPUCCIN_LATTE
+                );
+
             SshConnectionLauncher launcher = new SshConnectionLauncher(
                 activity,
                 readerRepo,
@@ -340,9 +352,28 @@ public class SshConnectionLauncherTest {
             assertTrue(tmpDir.listFiles() == null || tmpDir.listFiles().length == 0);
             assertEquals(0L, readerRepo.getById(profile.id).lastUsedAtMillis);
 
-            android.app.Dialog errorDialog = org.robolectric.shadows.ShadowDialog.getLatestDialog();
-            assertNotNull(errorDialog);
+            android.app.Dialog latest = org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            assertTrue(latest instanceof androidx.appcompat.app.AlertDialog);
+            androidx.appcompat.app.AlertDialog errorDialog = (androidx.appcompat.app.AlertDialog) latest;
             assertTrue(errorDialog.isShowing());
+
+            android.graphics.drawable.Drawable bg = errorDialog.getWindow().getDecorView().getBackground();
+            assertTrue(bg instanceof android.graphics.drawable.GradientDrawable);
+            android.graphics.drawable.GradientDrawable windowBg = (android.graphics.drawable.GradientDrawable) bg;
+            assertEquals(latte.surfaceContainerHigh, windowBg.getColor().getDefaultColor());
+            float expectedRadius = 24f * activity.getResources().getDisplayMetrics().density;
+            assertEquals(expectedRadius, windowBg.getCornerRadius(), 0.5f);
+
+            android.widget.TextView titleView = errorDialog.findViewById(androidx.appcompat.R.id.alertTitle);
+            android.widget.TextView messageView = errorDialog.findViewById(android.R.id.message);
+            assertNotNull(titleView);
+            assertNotNull(messageView);
+            assertEquals(latte.onSurface, titleView.getCurrentTextColor());
+            assertEquals(latte.onSurfaceVariant, messageView.getCurrentTextColor());
+            assertEquals(
+                latte.accent,
+                errorDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).getCurrentTextColor()
+            );
         }
     }
 }

@@ -30,27 +30,27 @@ final class SshFsUtils {
     }
 
     static void chmod0700(@NonNull File file) {
-        try {
-            //noinspection OctalInteger
-            Os.chmod(file.getAbsolutePath(), 0700);
-        } catch (Throwable ignored) {
-            // Host JVM fallback
-        }
-        try {
-            file.setReadable(false, false);
-            file.setWritable(false, false);
-            file.setExecutable(false, false);
-            file.setReadable(true, true);
-            file.setWritable(true, true);
-            file.setExecutable(true, true);
-        } catch (Throwable ignored) {
-        }
+        //noinspection OctalInteger
+        chmod(file, 0700, true, true);
     }
 
     static void chmod0600(@NonNull File file) {
+        //noinspection OctalInteger
+        chmod(file, 0600, true, false);
+    }
+
+    static void chmod0644(@NonNull File file) {
+        //noinspection OctalInteger
+        chmod(file, 0644, false, false);
+    }
+
+    private static void chmod(
+            @NonNull File file,
+            int mode,
+            boolean ownerOnlyRead,
+            boolean ownerExec) {
         try {
-            //noinspection OctalInteger
-            Os.chmod(file.getAbsolutePath(), 0600);
+            Os.chmod(file.getAbsolutePath(), mode);
         } catch (Throwable ignored) {
             // Host JVM fallback
         }
@@ -58,13 +58,23 @@ final class SshFsUtils {
             file.setReadable(false, false);
             file.setWritable(false, false);
             file.setExecutable(false, false);
-            file.setReadable(true, true);
+            file.setReadable(true, ownerOnlyRead);
             file.setWritable(true, true);
+            if (ownerExec) {
+                file.setExecutable(true, true);
+            }
         } catch (Throwable ignored) {
         }
     }
 
     static void writeBytesAtomic0600(@NonNull File target, @NonNull byte[] content) throws IOException {
+        writeBytesAtomic0600(target, content, true);
+    }
+
+    static void writeBytesAtomic0600(
+            @NonNull File target,
+            @NonNull byte[] content,
+            boolean allowOverwrite) throws IOException {
         File parent = target.getParentFile();
         if (parent != null && !ensureDir0700(parent)) {
             throw new IOException("Unable to create directory: " + parent.getAbsolutePath());
@@ -81,7 +91,13 @@ final class SshFsUtils {
                 out.getFD().sync();
             }
             chmod0600(tempFile);
+            if (!allowOverwrite && target.exists()) {
+                throw new IOException("Target file already exists: " + target.getAbsolutePath());
+            }
             if (!tempFile.renameTo(target)) {
+                if (!allowOverwrite) {
+                    throw new IOException("Unable to rename temp file to: " + target.getAbsolutePath());
+                }
                 if (target.exists() && !target.delete()) {
                     throw new IOException("Unable to replace target file: " + target.getAbsolutePath());
                 }

@@ -96,6 +96,7 @@ public final class SshDrawerCoordinator implements TermuxAppearanceAware {
     @Nullable private final TextView emptyStateView;
     @NonNull private TermuxColorPalette activePalette;
     @NonNull private Typeface activeTypeface;
+    private boolean launchInProgress = false;
 
     public SshDrawerCoordinator(
             @NonNull TermuxActivity activity,
@@ -127,10 +128,6 @@ public final class SshDrawerCoordinator implements TermuxAppearanceAware {
         } else {
             drawer.closeDrawer(GravityCompat.START, false);
         }
-    }
-
-    public void setDependencies(@NonNull Dependencies dependencies) {
-        this.dependencies = dependencies;
     }
 
     public void refreshHosts() {
@@ -219,7 +216,7 @@ public final class SshDrawerCoordinator implements TermuxAppearanceAware {
             titleView.setText(profile.getEffectiveDisplayName());
         }
         if (subtitleView != null) {
-            subtitleView.setText(formatEndpoint(profile));
+            subtitleView.setText(profile.formatEndpoint());
         }
         if (pinBadgeView != null) {
             pinBadgeView.setVisibility(profile.pinned ? View.VISIBLE : View.GONE);
@@ -302,22 +299,24 @@ public final class SshDrawerCoordinator implements TermuxAppearanceAware {
     }
 
     private void connectToProfile(@NonNull SshProfile profile) {
+        if (launchInProgress) {
+            return;
+        }
+        launchInProgress = true;
         closeDrawerSafely(activity.getDrawer());
         dependencies.connectionLauncher.connect(profile, outcome -> {
+            if (outcome.status == SshConnectionLauncher.LaunchStatus.PENDING) {
+                return;
+            }
+            launchInProgress = false;
+            if (activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
             if (outcome.status == SshConnectionLauncher.LaunchStatus.LAUNCHED) {
                 refreshHosts();
             } else if (outcome.status == SshConnectionLauncher.LaunchStatus.LAUNCH_FAILED) {
                 Toast.makeText(activity, R.string.ssh_launch_error_session, Toast.LENGTH_SHORT).show();
             }
         });
-    }
-
-    @NonNull
-    private static String formatEndpoint(@NonNull SshProfile profile) {
-        String base = profile.username + "@" + profile.host;
-        if (profile.port != SshProfile.DEFAULT_PORT) {
-            return base + ":" + profile.port;
-        }
-        return base;
     }
 }
