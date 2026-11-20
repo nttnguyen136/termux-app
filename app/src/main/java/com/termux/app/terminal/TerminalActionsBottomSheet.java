@@ -21,6 +21,7 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.activities.HelpActivity;
 import com.termux.app.activities.SettingsActivity;
+import com.termux.app.ssh.SshHostsActivity;
 import com.termux.shared.activity.ActivityUtils;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.termux.theme.TermuxColorPalette;
@@ -40,6 +41,7 @@ public final class TerminalActionsBottomSheet {
     public static final class ActionIds {
         public static final String PASTE = "paste";
         public static final String NEW_SESSION = "new_session";
+        public static final String SSH_HOSTS = "ssh_hosts";
         public static final String APPEARANCE = "appearance";
         public static final String TOGGLE_EXTRA_KEYS = "toggle_extra_keys";
         public static final String SELECT_URL = "select_url";
@@ -135,6 +137,13 @@ public final class TerminalActionsBottomSheet {
             null, true, false, () -> {
                 dialog.dismiss();
                 if (sessionClient != null) sessionClient.addNewSession(false, null);
+            });
+
+        addActionRow(activity, listContainer, palette, density, ActionIds.SSH_HOSTS,
+            R.drawable.ic_ssh_host, activity.getString(R.string.action_open_ssh_hosts),
+            null, true, false, () -> {
+                dialog.dismiss();
+                ActivityUtils.startActivity(activity, SshHostsActivity.createIntent(activity));
             });
 
         addActionRow(activity, listContainer, palette, density, ActionIds.APPEARANCE,
