@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ssh_missing_openssh_title">Install OpenSSH?</string>
+    <string name="ssh_missing_openssh_message">OpenSSH (%1$s) is not installed yet. Install the openssh package and connect to "%2$s" automatically once installation succeeds?</string>
+    <string name="ssh_missing_openssh_command_preview">pkg install -y openssh</string>
+    <string name="ssh_missing_openssh_install_and_connect">Install &amp; Connect</string>
+    <string name="ssh_launch_error_title">Unable to Start SSH Session</string>
+    <string name="ssh_launch_error_credential">Could not decrypt saved credentials for this SSH host. Re-save the password or passphrase and try again.</string>
+    <string name="ssh_launch_error_session">Could not start a new terminal session for this SSH host.</string>
+    <string name="ssh_launch_error_max_sessions">Close an existing terminal session before opening a new SSH connection.</string>
+</resources>
