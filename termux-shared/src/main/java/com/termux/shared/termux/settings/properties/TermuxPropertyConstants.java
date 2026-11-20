@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 /*
- * Version: v0.18.0
+ * Version: v0.19.0
  * SPDX-License-Identifier: MIT
  *
  * Changelog
@@ -80,6 +80,10 @@ import java.util.Set;
  *
  * - 0.18.0 (2022-06-13)
  *      - Add `KEY_DISABLE_FILE_SHARE_RECEIVER` and `KEY_DISABLE_FILE_VIEW_RECEIVER`.
+ *
+ * - 0.19.0 (2026-10-31)
+ *      - Add `KEY_EXTRA_KEYS_2` to `KEY_EXTRA_KEYS_5`, `MAX_EXTRA_KEYS_LAYOUTS` and `getExtraKeysLayoutKey()`.
+ *      - Add `SETTINGS` (with `TERMUX_SETTINGS` popup) and `DRAWER` keys to `DEFAULT_IVALUE_EXTRA_KEYS`.
  */
 
 /**
@@ -326,7 +330,32 @@ public final class TermuxPropertyConstants {
     /** Defines the key for extra keys */
     public static final String KEY_EXTRA_KEYS =  "extra-keys"; // Default: "extra-keys"
     //public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"; // Single row
-    public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"; // Double row
+    public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP',{key: 'SETTINGS', popup: 'TERMUX_SETTINGS'}], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN','DRAWER']]"; // Double row
+
+    /** Defines the maximum number of extra keys layouts. Layout 1 is {@link #KEY_EXTRA_KEYS} and
+     * layouts 2..N are defined by {@link #KEY_EXTRA_KEYS_2} .. {@link #KEY_EXTRA_KEYS_5}. */
+    public static final int MAX_EXTRA_KEYS_LAYOUTS = 5;
+
+    /** Defines the key for extra keys layout 2. No default value, layout is not shown if not set. */
+    public static final String KEY_EXTRA_KEYS_2 =  "extra-keys-2"; // Default: "extra-keys-2"
+    /** Defines the key for extra keys layout 3. No default value, layout is not shown if not set. */
+    public static final String KEY_EXTRA_KEYS_3 =  "extra-keys-3"; // Default: "extra-keys-3"
+    /** Defines the key for extra keys layout 4. No default value, layout is not shown if not set. */
+    public static final String KEY_EXTRA_KEYS_4 =  "extra-keys-4"; // Default: "extra-keys-4"
+    /** Defines the key for extra keys layout 5. No default value, layout is not shown if not set. */
+    public static final String KEY_EXTRA_KEYS_5 =  "extra-keys-5"; // Default: "extra-keys-5"
+
+    /**
+     * Get the property key for extra keys layout {@code layoutNumber}.
+     *
+     * @param layoutNumber The layout number in range {@code 1..}{@link #MAX_EXTRA_KEYS_LAYOUTS}.
+     * @return Returns {@link #KEY_EXTRA_KEYS} for {@code 1}, {@code extra-keys-N} for others, or
+     * {@code null} if out of range.
+     */
+    public static String getExtraKeysLayoutKey(int layoutNumber) {
+        if (layoutNumber < 1 || layoutNumber > MAX_EXTRA_KEYS_LAYOUTS) return null;
+        return layoutNumber == 1 ? KEY_EXTRA_KEYS : KEY_EXTRA_KEYS + "-" + layoutNumber;
+    }
 
     /** Defines the key for extra keys style */
     public static final String KEY_EXTRA_KEYS_STYLE =  "extra-keys-style"; // Default: "extra-keys-style"
@@ -427,6 +456,10 @@ public final class TermuxPropertyConstants {
         KEY_BACK_KEY_BEHAVIOUR,
         KEY_DEFAULT_WORKING_DIRECTORY,
         KEY_EXTRA_KEYS,
+        KEY_EXTRA_KEYS_2,
+        KEY_EXTRA_KEYS_3,
+        KEY_EXTRA_KEYS_4,
+        KEY_EXTRA_KEYS_5,
         KEY_EXTRA_KEYS_STYLE,
         KEY_NIGHT_MODE,
         KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR,

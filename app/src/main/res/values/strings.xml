@@ -235,4 +235,57 @@
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
 
+
+
+    <!-- Extra Keys Editor -->
+    <string name="termux_extra_keys_header">Extra Keys</string>
+    <string name="termux_extra_keys_editor_title">Extra keys layouts</string>
+    <string name="termux_extra_keys_editor_summary">Edit the extra keys layouts, style and toolbar height</string>
+    <string name="title_activity_extra_keys_editor">Extra Keys Layouts</string>
+    <string name="extra_keys_editor_save">Save</string>
+    <string name="extra_keys_editor_general">General</string>
+    <string name="extra_keys_editor_style">Style</string>
+    <string name="extra_keys_editor_text_all_caps">Show key text in all caps</string>
+    <string name="extra_keys_editor_toolbar_height">Toolbar height scale (0.4 - 3)</string>
+    <string name="extra_keys_editor_layout_title">Layout %1$d</string>
+    <string name="extra_keys_editor_preview">Preview</string>
+    <string name="extra_keys_editor_preview_error">Invalid layout: %1$s</string>
+    <string name="extra_keys_editor_row">Row %1$d</string>
+    <string name="extra_keys_editor_add_row">+ Row</string>
+    <string name="extra_keys_editor_add_layout">+ Add layout</string>
+    <string name="extra_keys_editor_reset_layout">Reset</string>
+    <string name="extra_keys_editor_reset_layout_confirm">Reset this layout to the default keys?</string>
+    <string name="extra_keys_editor_delete_layout_confirm">Delete layout %1$d?</string>
+    <string name="extra_keys_editor_references_replaced">%1$d LAYOUT_N key(s) referring to the deleted layout were changed to LAYOUT</string>
+    <string name="extra_keys_editor_discard_title">Discard changes?</string>
+    <string name="extra_keys_editor_discard_message">You have unsaved changes to the extra keys.</string>
+    <string name="extra_keys_editor_discard">Discard</string>
+    <string name="extra_keys_editor_empty_layout">Layout %1$d has no keys. Add a key or delete the layout.</string>
+    <string name="extra_keys_editor_invalid_references">These keys refer to layouts that do not exist: %1$s. Save anyway?</string>
+    <string name="extra_keys_editor_invalid_toolbar_height">The toolbar height scale must be a number between 0.4 and 3.</string>
+    <string name="extra_keys_editor_save_anyway">Save anyway</string>
+    <string name="extra_keys_editor_saved">Saved to %1$s</string>
+    <string name="extra_keys_editor_save_failed">Failed to save the extra keys: %1$s</string>
+    <string name="extra_keys_editor_load_failed">Could not load %1$s: %2$s. It will be replaced when saving.</string>
+
+    <string name="extra_key_dialog_title">Edit key</string>
+    <string name="extra_key_dialog_add_title">Add key</string>
+    <string name="extra_key_dialog_popup_title">Edit popup key</string>
+    <string name="extra_key_dialog_type_single">Single</string>
+    <string name="extra_key_dialog_type_combo">Combo</string>
+    <string name="extra_key_dialog_type_macro">Macro</string>
+    <string name="extra_key_dialog_key_hint">Key or text, e.g. ESC, TAB, LAYOUT, ~</string>
+    <string name="extra_key_dialog_combo_key_hint">Key, e.g. b, $, LEFT</string>
+    <string name="extra_key_dialog_combo_step">Step %1$d</string>
+    <string name="extra_key_dialog_combo_add_step">+ Add step (e.g. Ctrl+b, then $)</string>
+    <string name="extra_key_dialog_macro_hint">Keys separated by spaces, e.g. CTRL c ESC : w ENTER</string>
+    <string name="extra_key_dialog_display_hint">Display text (optional)</string>
+    <string name="extra_key_dialog_popup">Popup (swipe up): %1$s</string>
+    <string name="extra_key_dialog_popup_none">none</string>
+    <string name="extra_key_dialog_popup_edit">Edit popup</string>
+    <string name="extra_key_dialog_popup_remove">Remove popup</string>
+    <string name="extra_key_dialog_move">Move</string>
+    <string name="extra_key_dialog_delete">Delete</string>
+    <string name="extra_key_dialog_value_required">The key can\'t be empty</string>
+
 </resources>

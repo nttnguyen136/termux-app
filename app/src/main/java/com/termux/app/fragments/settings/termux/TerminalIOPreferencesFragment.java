@@ -1,14 +1,17 @@
 package com.termux.app.fragments.settings.termux;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 
 import androidx.annotation.Keep;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.termux.R;
+import com.termux.app.activities.ExtraKeysEditorActivity;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 
 @Keep
@@ -23,6 +26,14 @@ public class TerminalIOPreferencesFragment extends PreferenceFragmentCompat {
         preferenceManager.setPreferenceDataStore(TerminalIOPreferencesDataStore.getInstance(context));
 
         setPreferencesFromResource(R.xml.termux_terminal_io_preferences, rootKey);
+
+        Preference extraKeysEditorPreference = findPreference("extra_keys_editor");
+        if (extraKeysEditorPreference != null) {
+            extraKeysEditorPreference.setOnPreferenceClickListener(preference -> {
+                startActivity(new Intent(context, ExtraKeysEditorActivity.class));
+                return true;
+            });
+        }
     }
 
 }
